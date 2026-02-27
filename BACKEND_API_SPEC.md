@@ -7,6 +7,12 @@
 
 **Authentication:** All admin endpoints require `Authorization: Bearer <admin_token>` header. Admin authentication is separate from the mobile app user auth.
 
+**Conventions:**
+- **Base URL:** `https://api.shayyed.sa` (or as configured)
+- **Content-Type:** `application/json` for request/response bodies
+- **Dates:** ISO 8601 format (e.g. `2024-01-15T10:30:00Z` or `2024-01-15`)
+- **Locale:** Arabic (ar) for user-facing content; API identifiers may be in English
+
 ---
 
 ## Table of Contents
@@ -35,10 +41,14 @@
 22. [Business Intelligence (BI)](#22-business-intelligence-bi)
 23. [Audit Logs](#23-audit-logs)
 24. [Locations](#24-locations)
-25. [Complete Type Definitions](#25-complete-type-definitions)
-26. [API Endpoint Summary](#26-api-endpoint-summary)
-27. [Error Handling & HTTP Status Codes](#27-error-handling--http-status-codes)
-28. [Implementation Priority](#28-implementation-priority)
+25. [File Upload](#25-file-upload)
+26. [Pagination & Response Format](#26-pagination--response-format)
+27. [Export Functionality](#27-export-functionality)
+28. [Complete Type Definitions](#28-complete-type-definitions)
+29. [API Endpoint Summary](#29-api-endpoint-summary)
+30. [Error Handling & HTTP Status Codes](#30-error-handling--http-status-codes)
+31. [Implementation Priority](#31-implementation-priority)
+32. [Appendix: Dashboard Pages → API Mapping](#appendix-dashboard-pages--api-mapping)
 
 ---
 
@@ -83,6 +93,11 @@ The dashboard is accessed by admin users. Admin authentication is separate from 
 #### GET `/admin/auth/me`
 **Request:** Bearer token in header  
 **Response:** Current admin profile
+
+#### POST `/admin/auth/refresh` (optional)
+**Request:** Bearer token in header (or refresh token in body, per implementation)  
+**Response:** `{ "token": "string", "expiresAt": "ISO8601" }`  
+**Note:** Use when token is about to expire; implementation may use refresh token or sliding session.
 
 ---
 
@@ -145,10 +160,11 @@ These can be fetched via list endpoints with `limit=5` and `sort=createdAt:desc`
 - `search` (optional): search by name, id, phone, email
 - `registrationDateFrom` (optional): YYYY-MM-DD
 - `registrationDateTo` (optional): YYYY-MM-DD
+- `requestsCountMin`, `requestsCountMax` (optional): for clients only — filter by number of requests
 - `page` (optional): default 1
 - `limit` (optional): default 20
 
-**Response:** `User[]`
+**Response:** `User[]` (or `ClientProfile[]`/`ContractorProfile[]` when role is specified)
 
 ### 3.2 List Contractors (with extended filters)
 
@@ -172,6 +188,8 @@ These can be fetched via list endpoints with `limit=5` and `sort=createdAt:desc`
 
 #### GET `/admin/clients/:id`
 **Response:** `ClientProfile | null` — includes addresses
+
+**Optional computed fields** (for dashboard stats): `requestsCount`, `activeProjectsCount` — can be included in response or computed client-side from list endpoints with `clientId` filter
 
 #### GET `/admin/contractors/:id`
 **Response:** `ContractorProfile | null`
@@ -212,11 +230,34 @@ These can be fetched via list endpoints with `limit=5` and `sort=createdAt:desc`
 ### 4.2 List Regular Requests
 
 #### GET `/admin/requests/regular`
+**Query params:**
+- `status` (optional): RequestStatus
+- `clientId` (optional)
+- `search` (optional): title, description, id
+- `serviceId` or `serviceType` (optional): filter by service/subcategory
+- `city`, `district` (optional): filter by location
+- `budgetMin`, `budgetMax` (optional): filter by budget range
+- `urgency` (optional): `normal` | `urgent`
+- `createdFrom`, `createdTo` (optional): YYYY-MM-DD
+- `page`, `limit`
+
 **Response:** `ServiceRequest[]`
 
 ### 4.3 List Quick Service Orders
 
 #### GET `/admin/requests/quick`
+**Query params:**
+- `status` (optional): QuickServiceOrderStatus
+- `clientId`, `contractorId` (optional)
+- `search` (optional): title, serviceTitle, id
+- `serviceId` or `serviceType` (optional): filter by quick service
+- `city`, `district` (optional): filter by location
+- `urgency` (optional): `normal` | `urgent`
+- `priceMin`, `priceMax` (optional): filter by price range
+- `createdFrom`, `createdTo` (optional): YYYY-MM-DD
+- `updatedFrom`, `updatedTo` (optional): YYYY-MM-DD
+- `page`, `limit`
+
 **Response:** `QuickServiceOrder[]`
 
 ### 4.4 Get Request Details
@@ -253,10 +294,16 @@ These can be fetched via list endpoints with `limit=5` and `sort=createdAt:desc`
 
 #### GET `/admin/contracts`
 **Query params:**
-- `clientId`, `contractorId`, `requestId`, `status`
+- `clientId`, `contractorId`, `requestId`, `quotationId`
+- `status` (optional): Filter by derived status from linked project (e.g. ACTIVE, COMPLETED)
+- `priceMin`, `priceMax` (optional): Filter by totalPrice range
+- `createdFrom`, `createdTo` (optional): YYYY-MM-DD, filter by createdAt
+- `search` (optional): Search by id, project title, client name, contractor name
 - `page`, `limit`
 
 **Response:** `Contract[]`
+
+**Note:** Contract type has no `status` field; backend may derive status from the linked project (e.g. ACTIVE when project IN_PROGRESS, COMPLETED when project COMPLETED).
 
 ### 6.2 Get Contract
 
@@ -291,10 +338,21 @@ interface TimelineEntry {
   id: string;
   projectId: string;
   content: string;
-  attachment?: string;
+  attachments?: string[];
   createdAt: string;
+  userId: string;
+  userRole: UserRole | 'ADMIN';
+  updateType: 'text' | 'image' | 'file';
 }
 ```
+
+### 7.4 Project Reports
+
+#### GET `/admin/projects/:id/reports`
+**Response:** `ProjectReport[]`
+
+#### GET `/admin/project-reports/:id`
+**Response:** `ProjectReport | null`
 
 ---
 
@@ -308,8 +366,9 @@ interface TimelineEntry {
 - `status`, `zatcaStatus`
 - `amountMin`, `amountMax`
 - `dueDateFrom`, `dueDateTo`
-- `createdAtFrom`, `createdAtTo`
-- `paidAtFrom`, `paidAtTo`
+- `createdAtFrom`, `createdAtTo` (or `createdFrom`, `createdTo`)
+- `paidAtFrom`, `paidAtTo` (or `paidDateFrom`, `paidDateTo`)
+- `search` (optional): Search by id, title, description, client name, contractor name, project title
 - `page`, `limit`
 
 **Response:** `Invoice[]`
@@ -318,6 +377,19 @@ interface TimelineEntry {
 
 #### GET `/admin/invoices/:id`
 **Response:** `Invoice | null`
+
+### 8.3 Admin Invoice Actions
+
+#### PUT `/admin/invoices/:id/status`
+**Request:** `{ "status": "DRAFT" | "SENT" | "APPROVED" | "REJECTED" | "PAID" }`  
+**Response:** Updated `Invoice`
+
+#### POST `/admin/invoices/:id/reject`
+**Request:** `{ "reason": "string" }` — rejection reason (recommended for audit; backend may allow empty)  
+**Response:** Updated `Invoice` (status → REJECTED)
+
+#### DELETE `/admin/invoices/:id`
+**Response:** `void` — Soft delete or hard delete per business rules
 
 ---
 
@@ -336,6 +408,22 @@ interface TimelineEntry {
 
 #### GET `/admin/payments/:id`
 **Response:** `Payment | null`
+
+### 9.3 Admin Payment Actions
+
+#### PUT `/admin/payments/:id/status`
+**Request:** `{ "status": "PENDING" | "PROCESSING" | "SUCCESS" | "FAILED" | "REFUNDED" }`  
+**Response:** Updated `Payment`
+
+#### POST `/admin/payments/:id/refund`
+**Request:** `{ "reason": "string" }` — refund reason (required)  
+**Response:** Updated `Payment` (status → REFUNDED, sets refundedAt, refundReason, refundedBy = admin ID)
+
+#### POST `/admin/payments/:id/retry`
+**Response:** Updated `Payment` — Retry processing for failed payment (status → PROCESSING)
+
+#### POST `/admin/payments/:id/cancel`
+**Response:** Updated `Payment` — Cancel pending payment
 
 ---
 
@@ -371,20 +459,29 @@ interface TimelineEntry {
 **Response:** Updated `Settlement`
 
 **Validation:**
-- When `status` = `Rejected`, `rejectReason` is required
-- When `status` = `Paid`, backend should set `processedAt` (or equivalent)
+- When `status` = `Rejected`, `rejectReason` is **required** (for audit trail and user notification)
+- When `status` = `Paid`, backend must set `processedAt` to current timestamp
+- When `status` = `Processing`, backend transitions from Pending (admin clicked "بدء المعالجة")
 
-### 10.4 Settlement Details
+### 10.4 Get Single Settlement (optional)
+
+#### GET `/admin/settlements/:id`
+**Response:** `Settlement | null` — Full settlement with `invoiceIds` for "قائمة الفواتير الداخلة في التسوية"
+
+**Note:** If list endpoint returns full Settlement objects including `invoiceIds`, this endpoint may be omitted.
+
+### 10.5 Settlement Details
 
 Settlement includes:
 - `id`, `contractorId`, `contractorName`
 - `periodStart`, `periodEnd`
 - `grossAmount`, `platformFee`, `vatAmount`, `netPayout`
 - `status`: `Pending` | `Processing` | `Paid` | `Rejected`
-- `createdAt`, `processedAt` (optional)
+- `createdAt`, `processedAt` (optional, set when status → Paid)
 - `rejectReason` (optional, when Rejected)
+- `invoiceIds?: string[]` — IDs of invoices included in this settlement (for "قائمة الفواتير الداخلة في التسوية")
 
-### 10.5 Download Settlement Report
+### 10.6 Download Settlement Report
 
 #### GET `/admin/settlements/:id/report`
 **Response:** PDF or Excel file (Content-Disposition: attachment)
@@ -398,6 +495,11 @@ Settlement includes:
 #### GET `/admin/complaints`
 **Query params:**
 - `status`, `type`, `projectId`, `clientId`, `contractorId`
+- `raisedBy` (optional): `CLIENT` | `CONTRACTOR` — who raised the complaint
+- `hasResponse` (optional): `true` | `false` — filter by whether admin has responded
+- `createdFrom`, `createdTo` (optional): YYYY-MM-DD
+- `respondedFrom`, `respondedTo` (optional): YYYY-MM-DD, filter by respondedAt
+- `search` (optional): Search by id, description, response
 - `page`, `limit`
 
 **Response:** `Complaint[]`
@@ -459,6 +561,12 @@ Settlement includes:
 - Updates ticket `status` to `in_progress` if it was `open`
 - Updates ticket `updatedAt`
 - Sends notification to ticket creator
+
+### 12.4 Admin Update Support Ticket Status
+
+#### PUT `/admin/support-tickets/:id/status`
+**Request:** `{ "status": "open" | "in_progress" | "closed" }`  
+**Response:** Updated `SupportTicket`
 
 ---
 
@@ -576,15 +684,18 @@ interface ChatBan {
 {
   "title": "string",
   "body": "string",
-  "type": "offer" | "payment" | "complaint" | "general",
+  "type": "offer" | "payment" | "complaint" | "general" | "operational" | "financial",
   "targetType": "all" | "clients" | "contractors"
 }
 ```
+**Note:** Some clients send `category` instead of `targetType`; both map to the same values (`all` | `clients` | `contractors`). Backend should accept either field name.
+
 **Response:** `{ "success": true, "sentCount": number }`
 
 **Behavior:**
 - Creates and sends notifications to all users matching `targetType`
-- `targetType`: `all` = all users, `clients` = clients only, `contractors` = contractors only
+- `targetType` (or `category`): `all` = all users, `clients` = clients only, `contractors` = contractors only
+- `type`: `general`, `operational`, `financial` (from BroadcastNotificationsPage), or `offer`, `payment`, `complaint`. Backend may accept both sets.
 
 ---
 
@@ -609,6 +720,16 @@ interface ChatBan {
 
 #### GET `/admin/milestones/:id/contract`
 **Response:** `Contract | null` — contract that contains this milestone
+
+### 15.4 Admin Milestone Actions
+
+#### PUT `/admin/milestones/:id/status`
+**Request:** `{ "status": "NotDue" | "Due" | "Paid" }`  
+**Response:** Updated `Milestone`  
+**Note:** When status = `Paid`, set `paidAt` to current timestamp
+
+#### DELETE `/admin/milestones/:id`
+**Response:** `void` — Consider business rules (e.g. only if no payments linked)
 
 ---
 
@@ -676,6 +797,9 @@ The dashboard has full CRUD for:
 **Response:** `Category`  
 **Note:** When disabling category, disable all its subcategories
 
+#### DELETE `/admin/services/categories/:id`
+**Response:** `void` — Consider cascade to subcategories
+
 ### 16.3 Subcategories (Under Category)
 
 #### GET `/admin/services/subcategories`
@@ -708,6 +832,9 @@ The dashboard has full CRUD for:
 **Response:** `Subcategory`  
 **Note:** Cannot enable if parent category is disabled
 
+#### DELETE `/admin/services/subcategories/:id`
+**Response:** `void`
+
 ### 16.4 Quick Services
 
 #### GET `/admin/services/quick`
@@ -738,6 +865,13 @@ The dashboard has full CRUD for:
 #### PUT `/admin/services/quick/:id/toggle-active`
 **Request:** `{ "isActive": boolean }`  
 **Response:** `QuickService`
+
+#### DELETE `/admin/services/quick/:id`
+**Response:** `void`
+
+#### POST `/admin/services/quick/:id/duplicate`
+**Response:** New `QuickService` (copy of original with new id, appended " (نسخة)" suffix or similar)  
+**Use case:** "إنشاء نسخة" button on QuickServiceDetailsPage
 
 ---
 
@@ -804,8 +938,10 @@ interface PromoCode {
 ```
 **Response:** Updated `ContractorProfile`
 
+**Validation:** When `status` = `REJECTED`, `rejectReason` is **required** (displayed to contractor, stored for audit).
+
 **Behavior:**
-- `VERIFIED`: Sets `verificationStatus`, `verifiedAt`, clears `rejectionReason` if any
+- `VERIFIED`: Sets `verificationStatus`, `verifiedAt`, clears `rejectionReason`/`verificationNotes` if any
 - `REJECTED`: Sets `verificationStatus`, `rejectedAt`, `verificationNotes` (or `rejectReason`), notifies contractor
 
 ---
@@ -1051,9 +1187,93 @@ interface AuditLog {
 
 ---
 
-## 25. Complete Type Definitions
+## 25. File Upload
 
-### Enums
+Admin may need to upload files for: complaint response attachments, support ticket reply attachments, and other admin actions.
+
+#### POST `/admin/upload/file`
+**Request:** `multipart/form-data` with `file` field  
+**Response:** `{ "url": "string" }` — URL of uploaded file (for use in attachments arrays)
+
+**Supported formats:** Images (JPG, PNG), Documents (PDF)  
+**Max size:** Define per business (e.g. 10MB)
+
+**Use cases:** Complaint response attachments, support ticket reply attachments, project report attachments, portfolio images, invoice attachments.
+
+---
+
+## 26. Pagination & Response Format
+
+### 26.1 List Response Pagination
+
+All list endpoints support `page` and `limit` query params. Default: `page=1`, `limit=20`.
+
+**Response format (when paginated):**
+```json
+{
+  "data": [ /* array of items */ ],
+  "total": number,
+  "page": number,
+  "limit": number,
+  "hasMore": boolean
+}
+```
+
+**Alternative:** Return `T[]` directly when total is small; backend may omit pagination meta for simple lists.
+
+### 26.2 Sort Order
+
+List endpoints support `sort` and `order` query params:
+
+- `sort`: field name (e.g. `createdAt`, `updatedAt`, `name`, `amount`, `status`)
+- `order`: `asc` | `desc` (default: `desc` for dates, `asc` for names)
+
+**Common sort fields by entity:**
+- Users/Contractors: `createdAt`, `name`, `rating`
+- Requests/Orders: `createdAt`, `updatedAt`, `status`
+- Invoices: `createdAt`, `dueDate`, `amount`, `status`
+- Payments: `createdAt`, `processedAt`, `amount`
+- Settlements: `createdAt`, `periodStart`, `netPayout`
+
+### 26.3 Search
+
+- Case-insensitive
+- Multiple fields (OR)
+- Debounced on client (300–500ms)
+
+---
+
+## 27. Export Functionality
+
+Many dashboard pages have Export buttons (Excel, PDF, CSV). Backend should provide export endpoints.
+
+### 27.1 Generic Export Endpoint
+
+#### GET `/admin/export/:entityType`
+**Query params:**
+- `format`: `excel` | `pdf` | `csv` (required)
+- `...filters` — same as list endpoint for the entity
+
+**Response:** File download (Content-Disposition: attachment; filename=...)
+
+**Entity types:** `users`, `clients`, `contractors`, `requests`, `quotations`, `contracts`, `projects`, `invoices`, `payments`, `settlements`, `complaints`, `support-tickets`, `chats`, `notifications`, `milestones`
+
+### 27.2 Contract PDF Export
+
+#### GET `/admin/contracts/:id/pdf`
+**Response:** PDF file (Content-Type: application/pdf, Content-Disposition: attachment)
+
+### 27.3 Chat Export
+
+#### GET `/admin/chat/threads/:id/export`
+**Query params:** `format`: `excel` | `pdf` | `csv`  
+**Response:** File with thread and messages
+
+---
+
+## 28. Complete Type Definitions
+
+### 28.1 Enums
 
 ```typescript
 enum UserRole {
@@ -1137,7 +1357,7 @@ enum QuickServiceOrderStatus {
 }
 ```
 
-### Core Interfaces
+### 28.2 Core Interfaces
 
 ```typescript
 interface User {
@@ -1156,6 +1376,12 @@ interface Address {
   district: string;
   detailed?: string;
   isDefault: boolean;
+}
+
+interface District {
+  id: string;
+  cityId: string;
+  name: string;
 }
 
 interface ClientProfile extends User {
@@ -1341,6 +1567,7 @@ interface Settlement {
   createdAt: string;
   processedAt?: string;
   rejectReason?: string;
+  invoiceIds?: string[];
 }
 
 interface Complaint {
@@ -1385,7 +1612,7 @@ interface Notification {
   userId: string;
   title: string;
   body: string;
-  type: 'offer' | 'payment' | 'complaint' | 'general';
+  type: 'offer' | 'payment' | 'complaint' | 'general' | 'operational' | 'financial';
   relatedId?: string;
   read: boolean;
   createdAt: string;
@@ -1484,24 +1711,37 @@ interface Rating {
 
 interface PortfolioItem {
   id: string;
+  contractorId: string;
   imageUri: string;
   title: string;
   description: string;
   date: string;
   city: string;
-  contractorId?: string;
+}
+
+interface ProjectReport {
+  id: string;
+  projectId: string;
+  contractorId: string;
+  title: string;
+  type: 'PROGRESS' | 'QUALITY' | 'WEEKLY' | 'MONTHLY' | 'FINAL';
+  description: string;
+  progress?: number;
+  attachments: string[];
+  createdAt: string;
 }
 ```
 
 ---
 
-## 26. API Endpoint Summary
+## 29. API Endpoint Summary
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | /admin/auth/login | Admin login |
 | POST | /admin/auth/logout | Admin logout |
 | GET | /admin/auth/me | Current admin |
+| POST | /admin/auth/refresh | Refresh token (optional) |
 | GET | /admin/dashboard/stats | Dashboard stats (optional) |
 | GET | /admin/users | List users |
 | GET | /admin/users/:id | Get user |
@@ -1512,6 +1752,7 @@ interface PortfolioItem {
 | GET | /admin/contractors/:id/ratings | Contractor ratings |
 | GET | /admin/contractors/:id/portfolio | Contractor portfolio |
 | PUT | /admin/contractors/:id/verification | Verify/reject contractor |
+| GET | /admin/requests | List requests (type=regular\|quick) |
 | GET | /admin/requests/regular | List regular requests |
 | GET | /admin/requests/quick | List quick orders |
 | GET | /admin/requests/regular/:id | Get regular request |
@@ -1525,6 +1766,9 @@ interface PortfolioItem {
 | GET | /admin/projects/:id/timeline | Project timeline |
 | GET | /admin/invoices | List invoices |
 | GET | /admin/invoices/:id | Get invoice |
+| PUT | /admin/invoices/:id/status | Update invoice status |
+| POST | /admin/invoices/:id/reject | Reject invoice (with reason) |
+| DELETE | /admin/invoices/:id | Delete invoice |
 | POST | /admin/invoices/:id/zatca/issue | Issue ZATCA |
 | POST | /admin/invoices/:id/zatca/retry | Retry ZATCA |
 | GET | /admin/invoices/:id/zatca/xml | Get ZATCA XML |
@@ -1532,7 +1776,12 @@ interface PortfolioItem {
 | POST | /admin/invoices/:id/zoho/resync | Resync to Zoho |
 | GET | /admin/payments | List payments |
 | GET | /admin/payments/:id | Get payment |
+| PUT | /admin/payments/:id/status | Update payment status |
+| POST | /admin/payments/:id/refund | Refund payment (with reason) |
+| POST | /admin/payments/:id/retry | Retry failed payment |
+| POST | /admin/payments/:id/cancel | Cancel pending payment |
 | GET | /admin/settlements | List settlements |
+| GET | /admin/settlements/:id | Get settlement (optional) |
 | PUT | /admin/settlements/:id/status | Update settlement status |
 | GET | /admin/settlements/:id/report | Download settlement report |
 | GET | /admin/complaints | List complaints |
@@ -1541,6 +1790,7 @@ interface PortfolioItem {
 | GET | /admin/support-tickets | List support tickets |
 | GET | /admin/support-tickets/:id | Get ticket |
 | POST | /admin/support-tickets/:id/replies | Admin reply |
+| PUT | /admin/support-tickets/:id/status | Update ticket status |
 | GET | /admin/chat/threads | List chat threads |
 | GET | /admin/chat/threads/:id | Get thread |
 | GET | /admin/chat/threads/:id/messages | List messages |
@@ -1555,22 +1805,31 @@ interface PortfolioItem {
 | GET | /admin/milestones | List milestones |
 | GET | /admin/milestones/:id | Get milestone |
 | GET | /admin/milestones/:id/contract | Get milestone contract |
+| PUT | /admin/milestones/:id/status | Update milestone status |
+| DELETE | /admin/milestones/:id | Delete milestone |
+| GET | /admin/projects/:id/reports | List project reports |
+| GET | /admin/project-reports/:id | Get project report |
 | GET | /admin/services/groups | List service groups |
 | GET | /admin/services/groups/:id | Get group |
 | POST | /admin/services/groups | Create group |
 | PUT | /admin/services/groups/:id | Update group |
+| DELETE | /admin/services/groups/:id | Delete group |
 | GET | /admin/services/categories | List categories |
 | GET | /admin/services/categories/:id | Get category |
 | POST | /admin/services/categories | Create category |
 | PUT | /admin/services/categories/:id | Update category |
+| DELETE | /admin/services/categories/:id | Delete category |
 | GET | /admin/services/subcategories | List subcategories |
 | GET | /admin/services/subcategories/:id | Get subcategory |
 | POST | /admin/services/subcategories | Create subcategory |
 | PUT | /admin/services/subcategories/:id | Update subcategory |
+| DELETE | /admin/services/subcategories/:id | Delete subcategory |
 | GET | /admin/services/quick | List quick services |
 | GET | /admin/services/quick/:id | Get quick service |
 | POST | /admin/services/quick | Create quick service |
 | PUT | /admin/services/quick/:id | Update quick service |
+| DELETE | /admin/services/quick/:id | Delete quick service |
+| POST | /admin/services/quick/:id/duplicate | Duplicate quick service |
 | GET | /admin/promo-codes | List promo codes |
 | POST | /admin/promo-codes | Create promo code |
 | PUT | /admin/promo-codes/:id/toggle-active | Toggle promo active |
@@ -1581,10 +1840,14 @@ interface PortfolioItem {
 | GET | /admin/audit-logs/:id | Get audit log |
 | GET | /admin/locations/cities | List cities |
 | GET | /admin/locations/districts | List districts |
+| POST | /admin/upload/file | Upload file (returns URL) |
+| GET | /admin/export/:entityType | Export data (excel/pdf/csv) |
+| GET | /admin/contracts/:id/pdf | Export contract as PDF |
+| GET | /admin/chat/threads/:id/export | Export chat thread |
 
 ---
 
-## 27. Error Handling & HTTP Status Codes
+## 30. Error Handling & HTTP Status Codes
 
 - **200** OK — Success
 - **201** Created — Resource created (e.g. POST)
@@ -1607,23 +1870,55 @@ interface PortfolioItem {
 
 ---
 
-## 28. Implementation Priority
+## 31. Implementation Priority
 
-1. Admin auth (login, logout, token validation)
+1. Admin auth (login, logout, token validation, refresh token optional)
 2. Users & contractors (list, get, filters)
 3. Requests, quotations, contracts, projects
-4. Invoices, payments, settlements
-5. Complaints (respond), support tickets (reply)
+4. Invoices, payments, settlements (including admin actions: status update, reject, refund, retry)
+5. Complaints (respond), support tickets (reply, status update)
 6. Chat (threads, messages, settings, bans)
 7. Notifications (list, broadcast)
-8. Services CRUD (groups, categories, subcategories, quick services)
+8. Services CRUD (groups, categories, subcategories, quick services, duplicate)
 9. Promo codes
 10. Contractor verification
-11. ZATCA (issue, retry, XML)
-12. Zoho sync
-13. Settings
-14. BI stats
-15. Audit logs
+11. Milestones (status update, delete)
+12. ZATCA (issue, retry, XML)
+13. Zoho sync
+14. Settings
+15. BI stats
+16. Audit logs
+17. File upload
+18. Export (Excel, PDF, CSV, contract PDF, chat export)
+
+---
+
+## Appendix: Dashboard Pages → API Mapping
+
+| Dashboard Page | Primary APIs |
+|----------------|--------------|
+| Dashboard (`/`) | GET /admin/dashboard/stats, list endpoints (limit=5) |
+| Users | GET /admin/users, /admin/clients/:id, /admin/contractors/:id |
+| Requests | GET /admin/requests, /admin/requests/regular/:id, /admin/requests/quick/:id |
+| Quotations | GET /admin/quotations, /admin/quotations/:id |
+| Contracts | GET /admin/contracts, /admin/contracts/:id, /admin/contracts/:id/pdf |
+| Projects | GET /admin/projects, /admin/projects/:id, /admin/projects/:id/timeline, /admin/projects/:id/reports |
+| Invoices | GET /admin/invoices, /admin/invoices/:id, PUT status, POST reject, POST zatca/*, POST zoho/* |
+| Payments | GET /admin/payments, /admin/payments/:id, PUT status, POST refund/retry/cancel |
+| Settlements | GET /admin/settlements, PUT status, GET report |
+| Complaints | GET /admin/complaints, /admin/complaints/:id, PUT respond |
+| Support Tickets | GET /admin/support-tickets, /admin/support-tickets/:id, POST replies, PUT status |
+| Chats | GET /admin/chat/threads, /admin/chat/threads/:id, /admin/chat/settings, /admin/chat/bans |
+| Notifications | GET /admin/notifications, POST broadcast |
+| Milestones | GET /admin/milestones, /admin/milestones/:id, PUT status, DELETE |
+| Services | Full CRUD for groups, categories, subcategories, quick services |
+| Promo Codes | GET /admin/promo-codes, POST, PUT toggle-active |
+| Verification | GET /admin/contractors, PUT /admin/contractors/:id/verification |
+| ZATCA | GET /admin/invoices (zatcaStatus filter), POST issue/retry, GET xml |
+| Zoho | GET /admin/invoices, POST sync/resync |
+| BI | GET /admin/bi/stats |
+| Settings | GET/PUT /admin/settings |
+| Audit Logs | GET /admin/audit-logs |
 
 ---
 
