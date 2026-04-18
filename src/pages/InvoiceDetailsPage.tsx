@@ -10,7 +10,7 @@ import { adminApi } from '../services/api';
 import type { Invoice, Payment } from '../types';
 import { InvoiceStatus, PaymentStatus } from '../types';
 import { mockUsers, mockProjects, mockPayments, mockContracts } from '../mock/data';
-import { formatDate, formatCurrency, formatDateTime } from '../utils/formatters';
+import { formatDate, formatCurrency, formatDateTime, getInvoiceDisplayNumber } from '../utils/formatters';
 import { FileText, Image as ImageIcon, ArrowRight } from 'lucide-react';
 
 export const InvoiceDetailsPage: React.FC = () => {
@@ -138,16 +138,24 @@ export const InvoiceDetailsPage: React.FC = () => {
           العودة إلى الفواتير
         </Button>
         <h1 className="text-2xl font-semibold text-[#111111]">{invoice.title}</h1>
-        <p className="text-sm text-gray-600 mt-1">رقم الفاتورة: {invoice.id}</p>
+        <p className="text-sm text-gray-600 mt-1">
+          رقم الفاتورة: {getInvoiceDisplayNumber(invoice)}
+        </p>
       </div>
 
       {/* Invoice Info */}
       <Card title="معلومات الفاتورة">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <p className="text-sm text-gray-600 mb-1">معرف الفاتورة</p>
-            <p className="text-[#111111] font-medium">{invoice.id}</p>
+            <p className="text-sm text-gray-600 mb-1">رقم الفاتورة</p>
+            <p className="text-[#111111] font-medium">{getInvoiceDisplayNumber(invoice)}</p>
           </div>
+          {/^[a-f0-9]{24}$/i.test(invoice.id) && (
+            <div>
+              <p className="text-sm text-gray-600 mb-1">معرف النظام</p>
+              <p className="text-[#111111] font-mono text-sm break-all">{invoice.id}</p>
+            </div>
+          )}
           <div>
             <p className="text-sm text-gray-600 mb-1">العنوان</p>
             <p className="text-[#111111] font-medium">{invoice.title}</p>

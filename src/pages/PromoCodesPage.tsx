@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { Table } from '../components/Table';
 import { formatDateTime } from '../utils/formatters';
-
-const PROMO_CODES_KEY = 'shayyed_promo_codes';
+import { adminApi } from '../services/api';
 
 export interface PromoCode {
   id: string;
@@ -18,15 +17,17 @@ export interface PromoCode {
 const ToggleSwitch: React.FC<{
   checked: boolean;
   onChange: (checked: boolean) => void;
-}> = ({ checked, onChange }) => (
+  disabled?: boolean;
+}> = ({ checked, onChange, disabled }) => (
   <button
     type="button"
     role="switch"
     aria-checked={checked}
-    onClick={() => onChange(!checked)}
+    disabled={disabled}
+    onClick={() => !disabled && onChange(!checked)}
     className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 ${
-      checked ? 'bg-[#05C4AF]' : 'bg-gray-300'
-    }`}
+      disabled ? 'opacity-50 cursor-not-allowed' : ''
+    } ${checked ? 'bg-[#05C4AF]' : 'bg-gray-300'}`}
   >
     <span
       className={`absolute h-5 w-5 rounded-full bg-white shadow-sm transition-all duration-200 ${
@@ -38,26 +39,28 @@ const ToggleSwitch: React.FC<{
 
 export const PromoCodesPage: React.FC = () => {
   const [promos, setPromos] = useState<PromoCode[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [savingId, setSavingId] = useState<string | null>(null);
   const [form, setForm] = useState({ title: '', code: '', discountRate: '' });
   const [error, setError] = useState('');
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     try {
-      const stored = localStorage.getItem(PROMO_CODES_KEY);
-      if (stored) {
-        setPromos(JSON.parse(stored));
-      }
+      setLoading(true);
+      const rows = await adminApi.listPromoCodes();
+      setPromos(rows);
     } catch {
-      // ignore
+      setPromos([]);
+    } finally {
+      setLoading(false);
     }
   }, []);
 
-  const savePromos = (next: PromoCode[]) => {
-    setPromos(next);
-    localStorage.setItem(PROMO_CODES_KEY, JSON.stringify(next));
-  };
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     setError('');
     const title = form.title.trim();
     const code = form.code.trim().toUpperCase();
@@ -75,39 +78,50 @@ export const PromoCodesPage: React.FC = () => {
       setError('يرجى إدخال نسبة خصم صحيحة (1-100)');
       return;
     }
-    if (promos.some((p) => p.code.toUpperCase() === code)) {
-      setError('رمز العرض موجود مسبقاً');
-      return;
-    }
 
-    const newPromo: PromoCode = {
-      id: `promo-${Date.now()}`,
-      title,
-      code,
-      discountRate: rate,
-      isActive: true,
-      createdAt: new Date().toISOString(),
-    };
-    savePromos([...promos, newPromo]);
-    setForm({ title: '', code: '', discountRate: '' });
+    try {
+      await adminApi.createPromoCode({ title, code, discountRate: rate });
+      setForm({ title: '', code: '', discountRate: '' });
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'تعذر إنشاء العرض');
+    }
   };
 
-  const handleToggle = (id: string) => {
-    savePromos(
-      promos.map((p) => (p.id === id ? { ...p, isActive: !p.isActive } : p))
-    );
+  const handleToggle = async (id: string, next: boolean) => {
+    try {
+      setSavingId(id);
+      await adminApi.updatePromoCode(id, { isActive: next });
+      await load();
+    } catch {
+      /* ignore */
+    } finally {
+      setSavingId(null);
+    }
   };
 
   const columns = [
     { key: 'title', label: 'العنوان', render: (p: PromoCode) => p.title },
-    { key: 'code', label: 'الرمز', render: (p: PromoCode) => <span className="font-mono font-medium">{p.code}</span> },
+    {
+      key: 'code',
+      label: 'الرمز',
+      render: (p: PromoCode) => <span className="font-mono font-medium">{p.code}</span>,
+    },
     { key: 'discountRate', label: 'نسبة الخصم', render: (p: PromoCode) => `${p.discountRate}%` },
-    { key: 'createdAt', label: 'تاريخ الإنشاء', render: (p: PromoCode) => formatDateTime(p.createdAt) },
+    {
+      key: 'createdAt',
+      label: 'تاريخ الإنشاء',
+      render: (p: PromoCode) => (p.createdAt ? formatDateTime(p.createdAt) : '—'),
+    },
     {
       key: 'isActive',
       label: 'الحالة',
       render: (p: PromoCode) => (
-        <ToggleSwitch checked={p.isActive} onChange={() => handleToggle(p.id)} />
+        <ToggleSwitch
+          checked={p.isActive}
+          disabled={savingId === p.id}
+          onChange={(v) => handleToggle(p.id, v)}
+        />
       ),
     },
   ];
@@ -158,10 +172,10 @@ export const PromoCodesPage: React.FC = () => {
       </Card>
 
       <Card title="جميع العروض الترويجية">
-        {promos.length === 0 ? (
+        {promos.length === 0 && !loading ? (
           <p className="text-[#666666] text-center py-8">لا توجد عروض ترويجية حالياً.</p>
         ) : (
-          <Table columns={columns} data={promos} loading={false} />
+          <Table columns={columns} data={promos} loading={loading} />
         )}
       </Card>
     </div>

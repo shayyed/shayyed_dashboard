@@ -6,9 +6,8 @@ import { Modal } from '../components/Modal';
 import { EmptyState } from '../components/EmptyState';
 import { StatusBadge } from '../components/StatusBadge';
 import { adminApi } from '../services/api';
-import type { SupportTicket, SupportTicketReply } from '../types';
+import type { SupportTicket } from '../types';
 import { UserRole } from '../types';
-import { mockUsers } from '../mock/data';
 import { formatDate, formatDateTime } from '../utils/formatters';
 import { Info, ArrowRight } from 'lucide-react';
 
@@ -46,12 +45,11 @@ export const SupportTicketDetailsPage: React.FC = () => {
         return;
       }
       setTicket(ticketData);
-
-      // Find user
-      const userData = mockUsers.find(u => u.id === ticketData.userId);
-      if (userData) {
-        setUser(userData);
-      }
+      const userData =
+        ticketData.role === UserRole.CLIENT
+          ? await adminApi.getClient(ticketData.userId)
+          : await adminApi.getContractor(ticketData.userId);
+      setUser(userData);
     } catch (error) {
       console.error('Load error:', error);
     } finally {
@@ -62,23 +60,10 @@ export const SupportTicketDetailsPage: React.FC = () => {
   const handleSaveReply = async () => {
     if (!ticket || !replyContent.trim()) return;
     try {
-      // TODO: API call
-      const newReply: SupportTicketReply = {
-        id: `reply-${Date.now()}`,
-        ticketId: ticket.id,
-        senderId: 'admin1', // Current admin
-        senderRole: 'support',
-        content: replyContent,
-        createdAt: new Date().toISOString(),
-      };
-      setTicket({
-        ...ticket,
-        replies: [...(ticket.replies || []), newReply],
-        status: ticket.status === 'open' ? 'in_progress' : ticket.status,
-        updatedAt: new Date().toISOString(),
-      });
+      await adminApi.respondSupportTicket(ticket.id, replyContent.trim());
       setReplyContent('');
       setShowReplyModal(false);
+      await loadTicket();
     } catch (error) {
       console.error('Save reply error:', error);
     }
@@ -101,6 +86,10 @@ export const SupportTicketDetailsPage: React.FC = () => {
   }
 
   const hasSupportReplies = ticket.replies && ticket.replies.some(reply => reply.senderRole === 'support');
+  const displayName =
+    (user?.name && String(user.name).trim()) ||
+    (ticket.userName && String(ticket.userName).trim()) ||
+    '';
 
   return (
     <div className="space-y-6">
@@ -110,7 +99,9 @@ export const SupportTicketDetailsPage: React.FC = () => {
           العودة إلى تذاكر الدعم
         </Button>
         <h1 className="text-2xl font-semibold text-[#111111]">تفاصيل تذكرة الدعم</h1>
-        <p className="text-sm text-gray-600 mt-1">معرف التذكرة: {ticket.id}</p>
+        {displayName ? (
+          <p className="text-sm text-gray-600 mt-1">{displayName}</p>
+        ) : null}
       </div>
       {!hasSupportReplies && (
         <div className="mb-4">
@@ -127,10 +118,6 @@ export const SupportTicketDetailsPage: React.FC = () => {
       <Card title="معلومات التذكرة">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <p className="text-sm text-gray-600 mb-1">معرف التذكرة</p>
-            <p className="text-[#111111] font-medium">{ticket.id}</p>
-          </div>
-          <div>
             <p className="text-sm text-gray-600 mb-1">العنوان</p>
             <p className="text-[#111111] font-medium">{ticket.title}</p>
           </div>
@@ -146,36 +133,60 @@ export const SupportTicketDetailsPage: React.FC = () => {
             <p className="text-[#111111] font-medium">{formatDate(ticket.createdAt)}</p>
           </div>
         </div>
+        <details className="mt-4 text-sm text-gray-500 border-t border-gray-100 pt-3">
+          <summary className="cursor-pointer select-none text-gray-600 hover:text-gray-800">
+            معرفات للنسخ (تقنية)
+          </summary>
+          <dl className="mt-2 space-y-2 font-mono text-xs break-all">
+            <div>
+              <dt className="text-gray-500 mb-0.5">معرف التذكرة</dt>
+              <dd className="text-gray-800">{ticket.id}</dd>
+            </div>
+            <div>
+              <dt className="text-gray-500 mb-0.5">معرف المستخدم</dt>
+              <dd className="text-gray-800">{ticket.userId}</dd>
+            </div>
+          </dl>
+        </details>
       </Card>
 
       {/* User Info */}
-      {user && (
+      {ticket.userId ? (
         <Card title="معلومات المستخدم">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <p className="text-sm text-gray-600 mb-1">الاسم</p>
-              <Link
-                to={`/users/${ticket.role === UserRole.CLIENT ? 'clients' : 'contractors'}/${user.id}`}
-                className="text-blue-600 hover:underline font-medium"
-              >
-                {user.name}
-              </Link>
+              {user ? (
+                <Link
+                  to={`/users/${ticket.role === UserRole.CLIENT ? 'clients' : 'contractors'}/${user.id}`}
+                  className="text-blue-600 hover:underline font-medium"
+                >
+                  {displayName || user.name || ticket.userName || '—'}
+                </Link>
+              ) : (
+                <p className="text-[#111111] font-medium">
+                  {displayName || ticket.userName || '—'}
+                  <span className="block text-xs text-amber-700 mt-1 font-sans">
+                    تعذر تحميل الملف الكامل من الخادم
+                  </span>
+                </p>
+              )}
             </div>
-            <div>
-              <p className="text-sm text-gray-600 mb-1">معرف المستخدم</p>
-              <p className="text-[#111111]">{user.id}</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-600 mb-1">رقم الجوال</p>
-              <p className="text-[#111111]">{user.phone}</p>
-            </div>
+            {user ? (
+              <>
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">رقم الجوال</p>
+                  <p className="text-[#111111]">{user.phone || '—'}</p>
+                </div>
+              </>
+            ) : null}
             <div>
               <p className="text-sm text-gray-600 mb-1">الدور</p>
               <span className="text-[#111111]">{ROLE_LABELS[ticket.role]}</span>
             </div>
           </div>
         </Card>
-      )}
+      ) : null}
 
       {/* Messages Section - Shows initial ticket and replies */}
       <Card title={hasSupportReplies ? 'المحادثة' : 'رسالة التذكرة'}>
@@ -184,7 +195,7 @@ export const SupportTicketDetailsPage: React.FC = () => {
           <div className="p-4 rounded-lg border bg-gray-50 border-gray-200">
             <div className="mb-2">
               <p className="font-medium text-[#111111]">
-                {user?.name || ticket.userId}
+                {displayName || ticket.userName || user?.name || 'مستخدم'}
               </p>
               <p className="text-xs text-gray-500">
                 المستخدم • {formatDateTime(ticket.createdAt)}

@@ -26,49 +26,42 @@ export const ContractorDetailsPage: React.FC = () => {
 
 
   useEffect(() => {
-    if (id) {
-      loadContractor();
-      loadRelatedData();
-    }
-  }, [id]);
-
-  const loadContractor = async () => {
-    try {
-      setLoading(true);
-      const data = await adminApi.getContractor(id!);
-      if (data) {
-        setContractor(data);
-      }
-    } catch (error) {
-      console.error('Load error:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadRelatedData = async () => {
     if (!id) return;
-    try {
-      const ratingsData = await adminApi.getContractorRatings(id);
-      setRatings(ratingsData);
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        const [data, ratingsData] = await Promise.all([
+          adminApi.getContractor(id),
+          adminApi.getContractorRatings(id),
+        ]);
+        if (cancelled) return;
+        if (data) {
+          setContractor(data);
+          setPortfolioItems(data.portfolio || []);
+        } else {
+          setContractor(null);
+          setPortfolioItems([]);
+        }
+        setRatings(ratingsData);
 
-      const portfolioData = await adminApi.getContractorPortfolio(id);
-      setPortfolioItems(portfolioData);
-
-      const contractorQuickOrders = mockQuickServiceOrders.filter(q => q.contractorId === id);
-      
-      // Get requests that contractor has quoted on
-      const contractorQuotations = mockQuotations.filter(q => q.contractorId === id);
-      const requestIds = contractorQuotations.map(q => q.requestId);
-      const contractorRequests = mockRequests.filter(r => requestIds.includes(r.id));
-
-      setQuickOrders(contractorQuickOrders);
-      setRequests(contractorRequests);
-      setClients(mockClients);
-    } catch (error) {
-      console.error('Load related data error:', error);
-    }
-  };
+        const contractorQuickOrders = mockQuickServiceOrders.filter((q) => q.contractorId === id);
+        const contractorQuotations = mockQuotations.filter((q) => q.contractorId === id);
+        const requestIds = contractorQuotations.map((q) => q.requestId);
+        const contractorRequests = mockRequests.filter((r) => requestIds.includes(r.id));
+        setQuickOrders(contractorQuickOrders);
+        setRequests(contractorRequests);
+        setClients(mockClients);
+      } catch (error) {
+        console.error('Load error:', error);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
 
 
@@ -113,12 +106,12 @@ export const ContractorDetailsPage: React.FC = () => {
     {
       key: 'clientId',
       label: 'المقيّم',
-      render: (item: any) => (
+      render: (item: { clientId: string; clientName: string }) => (
         <Link 
           to={`/users/clients/${item.clientId}`} 
           className="text-blue-600 hover:underline"
         >
-          {item.clientName}
+          {item.clientName || item.clientId}
         </Link>
       ),
     },
@@ -250,15 +243,15 @@ export const ContractorDetailsPage: React.FC = () => {
             <h3 className="text-md font-semibold text-[#111111] mb-4">تفاصيل التقييمات</h3>
             <Table
               columns={ratingsColumns}
-              data={ratings.map(rating => {
-                const client = clients.find(c => c.id === rating.clientId);
-                const clientName = client ? client.name : rating.clientId;
-                
+              data={ratings.map((rating) => {
+                const client = clients.find((c) => c.id === rating.clientId);
+                const clientName =
+                  rating.clientName || client?.name || rating.clientId || '—';
                 return {
                   id: rating.id,
                   rating: rating.rating,
                   clientId: rating.clientId,
-                  clientName: clientName,
+                  clientName,
                   createdAt: rating.createdAt,
                 };
               })}

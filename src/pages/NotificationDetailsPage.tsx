@@ -5,7 +5,6 @@ import { EmptyState } from '../components/EmptyState';
 import { adminApi } from '../services/api';
 import type { Notification } from '../types';
 import { UserRole } from '../types';
-import { mockUsers, mockNotifications } from '../mock/data';
 import { formatDateTime } from '../utils/formatters';
 import { Button } from '../components/Button';
 import { ArrowRight } from 'lucide-react';
@@ -15,10 +14,11 @@ export const NotificationDetailsPage: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState<Notification | null>(null);
+  const [siblings, setSiblings] = useState<Notification[]>([]);
 
   useEffect(() => {
     if (id) {
-      loadNotification();
+      void loadNotification();
     }
   }, [id]);
 
@@ -34,32 +34,43 @@ export const NotificationDetailsPage: React.FC = () => {
     }
   };
 
-  // Helper function to get target users and count receivers
-  const getTargetUsersInfo = (notif: Notification): { targetUsers: 'العملاء' | 'المقاولون' | 'الكل'; receiverCount: number } => {
-    // Find all notifications with the same title and body
-    const sameNotifications = mockNotifications.filter(n => 
-      n.title === notif.title && 
-      n.body === notif.body
-    );
-    
-    const receiverCount = sameNotifications.length;
-    
-    // Check user roles
-    const userRoles = new Set<string>();
-    sameNotifications.forEach(n => {
-      const user = mockUsers.find(u => u.id === n.userId);
-      if (user) userRoles.add(user.role);
-    });
-    
-    let targetUsers: 'العملاء' | 'المقاولون' | 'الكل';
-    if (userRoles.has(UserRole.CLIENT) && userRoles.has(UserRole.CONTRACTOR)) {
-      targetUsers = 'الكل';
-    } else if (userRoles.has(UserRole.CLIENT)) {
-      targetUsers = 'العملاء';
-    } else {
-      targetUsers = 'المقاولون';
+  useEffect(() => {
+    if (!notification) {
+      setSiblings([]);
+      return;
     }
-    
+    let cancelled = false;
+    void adminApi.listNotifications().then((all) => {
+      if (cancelled) return;
+      const same = all.filter((n) => n.title === notification.title && n.body === notification.body);
+      setSiblings(same);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [notification?.id, notification?.title, notification?.body]);
+
+  const getTargetUsersInfo = (
+    notif: Notification
+  ): { targetUsers: 'العملاء' | 'المقاولون' | 'الكل'; receiverCount: number } => {
+    const receiverCount = siblings.length > 0 ? siblings.length : 1;
+    const roles = new Set(
+      siblings.map((n) => n.userRole?.toUpperCase()).filter((r): r is string => Boolean(r))
+    );
+    let targetUsers: 'العملاء' | 'المقاولون' | 'الكل';
+    if (roles.has(UserRole.CLIENT) && roles.has(UserRole.CONTRACTOR)) {
+      targetUsers = 'الكل';
+    } else if (roles.has(UserRole.CLIENT)) {
+      targetUsers = 'العملاء';
+    } else if (roles.has(UserRole.CONTRACTOR)) {
+      targetUsers = 'المقاولون';
+    } else if (notif.userRole?.toUpperCase() === UserRole.CLIENT) {
+      targetUsers = 'العملاء';
+    } else if (notif.userRole?.toUpperCase() === UserRole.CONTRACTOR) {
+      targetUsers = 'المقاولون';
+    } else {
+      targetUsers = 'الكل';
+    }
     return { targetUsers, receiverCount };
   };
 
@@ -92,7 +103,6 @@ export const NotificationDetailsPage: React.FC = () => {
         <p className="text-sm text-gray-600 mt-1">معرف الإشعار: {notification.id}</p>
       </div>
 
-      {/* Notification Info */}
       <Card title="معلومات الإشعار">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -112,18 +122,20 @@ export const NotificationDetailsPage: React.FC = () => {
             <p className="text-[#111111] font-medium">{formatDateTime(notification.createdAt)}</p>
           </div>
           <div>
-            <p className="text-sm text-gray-600 mb-1">عدد المستلمين</p>
+            <p className="text-sm text-gray-600 mb-1">عدد المستلمين (ضمن القائمة المحمّلة)</p>
             <p className="text-[#111111] font-medium">{receiverCount}</p>
           </div>
           <div>
             <p className="text-sm text-gray-600 mb-1">نوع المستخدمون المستهدفون</p>
-            <span className={`text-xs px-2 py-1 rounded ${
-              targetUsers === 'الكل' 
-                ? 'bg-purple-100 text-purple-700'
-                : targetUsers === 'العملاء'
-                ? 'bg-blue-100 text-blue-700'
-                : 'bg-green-100 text-green-700'
-            }`}>
+            <span
+              className={`text-xs px-2 py-1 rounded ${
+                targetUsers === 'الكل'
+                  ? 'bg-purple-100 text-purple-700'
+                  : targetUsers === 'العملاء'
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'bg-green-100 text-green-700'
+              }`}
+            >
               {targetUsers}
             </span>
           </div>

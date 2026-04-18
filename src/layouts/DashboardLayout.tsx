@@ -1,6 +1,7 @@
 import React from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import logo from '../assets/logo.png';
+import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard,
   Users,
@@ -16,7 +17,6 @@ import {
   Coins,
   Ticket,
   Wrench,
-  Settings,
   LogOut,
   BarChart3,
   Percent,
@@ -47,6 +47,11 @@ const MENU_ITEMS = [
 
 export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { admin, logout } = useAuth();
+
+  const displayName = admin?.name?.trim() || admin?.email || 'مسؤول';
+  const displayEmail = admin?.email || '';
 
   return (
     <div className="min-h-screen bg-white flex" dir="rtl">
@@ -78,13 +83,16 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
         {/* Admin Info & Logout */}
         <div className="p-4 border-t border-[#E5E5E5] space-y-3">
           <div className="space-y-1">
-            <p className="text-sm font-medium text-[#111111]">فهد العجلان</p>
-            <p className="text-xs text-[#666666]">fahad@shayyed.sa</p>
+            <p className="text-sm font-medium text-[#111111]">{displayName}</p>
+            {displayEmail ? (
+              <p className="text-xs text-[#666666]">{displayEmail}</p>
+            ) : null}
           </div>
           <button
-            onClick={() => {
-              // TODO: Implement logout functionality
-              console.log('Logout clicked');
+            type="button"
+            onClick={async () => {
+              await logout();
+              navigate('/login', { replace: true });
             }}
             className="flex items-center gap-2 w-full px-4 py-2 text-sm text-[#D34D72] hover:bg-[#D34D72]/10 rounded-md transition-colors border border-[#D34D72]/20"
           >

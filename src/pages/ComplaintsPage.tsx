@@ -11,7 +11,6 @@ import { EmptyState } from '../components/EmptyState';
 import { adminApi } from '../services/api';
 import type { Complaint } from '../types';
 import { ComplaintType, ComplaintStatus } from '../types';
-import { mockUsers, mockProjects, mockRequests, mockContracts } from '../mock/data';
 import { formatDate, formatDateTime } from '../utils/formatters';
 
 const STATUS_TABS = [
@@ -55,7 +54,7 @@ export const ComplaintsPage: React.FC = () => {
 
   useEffect(() => {
     loadComplaints();
-  }, [activeStatusTab, activeRaisedByTab]);
+  }, []);
 
   const loadComplaints = async () => {
     try {
@@ -90,17 +89,20 @@ export const ComplaintsPage: React.FC = () => {
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(c => {
-        const project = mockProjects.find(p => p.id === c.projectId);
-        const request = project ? mockRequests.find(r => r.id === project.requestId) : null;
-        const client = mockUsers.find(u => u.id === c.clientId);
-        const contractor = mockUsers.find(u => u.id === c.contractorId);
         return (
           c.id.toLowerCase().includes(query) ||
+          (c.publicReference && c.publicReference.toLowerCase().includes(query)) ||
+          (c.complaintNumber && c.complaintNumber.toLowerCase().includes(query)) ||
           c.description.toLowerCase().includes(query) ||
           (c.response && c.response.toLowerCase().includes(query)) ||
-          (client && client.name.toLowerCase().includes(query)) ||
-          (contractor && contractor.name.toLowerCase().includes(query)) ||
-          (request && request.title.toLowerCase().includes(query))
+          (c.clientName && c.clientName.toLowerCase().includes(query)) ||
+          (c.contractorName && c.contractorName.toLowerCase().includes(query)) ||
+          (c.projectTitle && c.projectTitle.toLowerCase().includes(query)) ||
+          (c.requestTitle && c.requestTitle.toLowerCase().includes(query)) ||
+          (c.requestReference && c.requestReference.toLowerCase().includes(query)) ||
+          (c.projectReference && c.projectReference.toLowerCase().includes(query)) ||
+          (c.projectId && c.projectId.toLowerCase().includes(query)) ||
+          (c.requestId && c.requestId.toLowerCase().includes(query))
         );
       });
     }
@@ -112,11 +114,7 @@ export const ComplaintsPage: React.FC = () => {
 
     // Request filter - البحث في الطلبات المرتبطة
     if (filters.project) {
-      filtered = filtered.filter(c => {
-        const project = mockProjects.find(p => p.id === c.projectId);
-        if (!project) return false;
-        return project.requestId === filters.project;
-      });
+      filtered = filtered.filter(c => c.requestId === filters.project);
     }
 
     // Client filter
@@ -156,38 +154,27 @@ export const ComplaintsPage: React.FC = () => {
   // Generate unique options for searchable selects
   const uniqueRequests = useMemo(() => {
     const requests = complaints
-      .map(c => {
-        const project = mockProjects.find(p => p.id === c.projectId);
-        if (!project) return null;
-        const request = mockRequests.find(r => r.id === project.requestId);
-        return request ? { label: `${request.id} - ${request.title}`, value: request.id } : null;
-      })
-      .filter((r): r is { label: string; value: string } => r !== null);
-    
+      .filter(c => c.requestId)
+      .map(c => ({
+        label: (c.requestTitle || '').trim() || c.requestId!,
+        value: c.requestId!,
+      }));
     const unique = Array.from(new Map(requests.map(r => [r.value, r])).values());
     return unique.sort((a, b) => a.label.localeCompare(b.label));
   }, [complaints]);
 
   const uniqueClients = useMemo(() => {
     const clients = complaints
-      .map(c => {
-        const client = mockUsers.find(u => u.id === c.clientId);
-        return client ? { label: client.name, value: client.id } : null;
-      })
-      .filter((c): c is { label: string; value: string } => c !== null);
-    
+      .filter(c => c.clientId && (c.clientName || '').trim())
+      .map(c => ({ label: c.clientName!.trim(), value: c.clientId }));
     const unique = Array.from(new Map(clients.map(c => [c.value, c])).values());
     return unique.sort((a, b) => a.label.localeCompare(b.label));
   }, [complaints]);
 
   const uniqueContractors = useMemo(() => {
     const contractors = complaints
-      .map(c => {
-        const contractor = mockUsers.find(u => u.id === c.contractorId);
-        return contractor ? { label: contractor.name, value: contractor.id } : null;
-      })
-      .filter((c): c is { label: string; value: string } => c !== null);
-    
+      .filter(c => c.contractorId && (c.contractorName || '').trim())
+      .map(c => ({ label: c.contractorName!.trim(), value: c.contractorId }));
     const unique = Array.from(new Map(contractors.map(c => [c.value, c])).values());
     return unique.sort((a, b) => a.label.localeCompare(b.label));
   }, [complaints]);
@@ -208,6 +195,15 @@ export const ComplaintsPage: React.FC = () => {
 
   const columns = [
     {
+      key: 'ref',
+      label: 'رقم الشكوى',
+      render: (complaint: Complaint) => (
+        <Link to={`/complaints/${complaint.id}`} className="text-blue-600 hover:underline font-medium">
+          {(complaint.publicReference || '').trim() || complaint.id}
+        </Link>
+      ),
+    },
+    {
       key: 'type',
       label: 'النوع',
       render: (complaint: Complaint) => (
@@ -218,48 +214,62 @@ export const ComplaintsPage: React.FC = () => {
       key: 'project',
       label: 'الطلب',
       render: (complaint: Complaint) => {
-        const project = mockProjects.find(p => p.id === complaint.projectId);
-        if (!project) return <span className="text-gray-400">-</span>;
-        const request = mockRequests.find(r => r.id === project.requestId);
-        return request ? (
-          <Link to={`/requests/regular/${request.id}`} className="text-blue-600 hover:underline">
-            {request.title}
-          </Link>
-        ) : (
-          <span className="text-gray-400">-</span>
-        );
+        if (complaint.requestId && (complaint.requestTitle || '').trim()) {
+          return (
+            <Link
+              to={`/requests/regular/${complaint.requestId}`}
+              className="text-blue-600 hover:underline"
+            >
+              {complaint.requestTitle}
+            </Link>
+          );
+        }
+        if (complaint.projectId && (complaint.projectTitle || '').trim()) {
+          return (
+            <Link to={`/projects/${complaint.projectId}`} className="text-blue-600 hover:underline">
+              {complaint.projectTitle}
+            </Link>
+          );
+        }
+        if (complaint.projectId) {
+          return (
+            <Link to={`/projects/${complaint.projectId}`} className="text-blue-600 hover:underline">
+              مشروع
+            </Link>
+          );
+        }
+        return <span className="text-gray-400">-</span>;
       },
     },
     {
       key: 'client',
       label: 'العميل',
-      render: (complaint: Complaint) => {
-        const client = mockUsers.find(u => u.id === complaint.clientId);
-        return client ? (
-          <Link to={`/users/clients/${client.id}`} className="text-blue-600 hover:underline">
-            {client.name}
+      render: (complaint: Complaint) =>
+        complaint.clientId && (complaint.clientName || '').trim() ? (
+          <Link
+            to={`/users/clients/${complaint.clientId}`}
+            className="text-blue-600 hover:underline"
+          >
+            {complaint.clientName}
           </Link>
         ) : (
           <span className="text-gray-400">-</span>
-        );
-      },
+        ),
     },
     {
       key: 'contractor',
       label: 'المقاول',
-      render: (complaint: Complaint) => {
-        const contractor = mockUsers.find(u => u.id === complaint.contractorId);
-        return contractor ? (
+      render: (complaint: Complaint) =>
+        complaint.contractorId && (complaint.contractorName || '').trim() ? (
           <Link
-            to={`/users/contractors/${contractor.id}`}
+            to={`/users/contractors/${complaint.contractorId}`}
             className="text-blue-600 hover:underline"
           >
-            {contractor.name}
+            {complaint.contractorName}
           </Link>
         ) : (
           <span className="text-gray-400">-</span>
-        );
-      },
+        ),
     },
     {
       key: 'status',

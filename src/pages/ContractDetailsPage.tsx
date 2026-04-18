@@ -4,15 +4,18 @@ import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { ArrowRight } from 'lucide-react';
 import { adminApi } from '../services/api';
-import type { Contract, ContractorProfile } from '../types';
+import type { Contract, ContractorProfile, ServiceRequest, Project } from '../types';
 import { formatSar, formatDate } from '../utils/formatters';
-import { mockUsers, mockRequests, mockQuotations, mockProjects } from '../mock/data';
 
 export const ContractDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [contract, setContract] = useState<Contract | null>(null);
+  const [relatedRequest, setRelatedRequest] = useState<ServiceRequest | null>(null);
+  const [relatedProject, setRelatedProject] = useState<Project | null>(null);
+  const [client, setClient] = useState<{ name: string; phone?: string } | null>(null);
+  const [contractor, setContractor] = useState<ContractorProfile | null>(null);
 
   useEffect(() => {
     if (id) {
@@ -21,11 +24,27 @@ export const ContractDetailsPage: React.FC = () => {
   }, [id]);
 
   const loadContract = async () => {
+    if (!id) return;
     try {
       setLoading(true);
-      const contracts = await adminApi.listContracts();
-      const found = contracts.find(c => c.id === id);
-      setContract(found || null);
+      const found = await adminApi.getContract(id);
+      setContract(found);
+      if (found?.requestId) {
+        const requests = await adminApi.listRequests();
+        setRelatedRequest(requests.find((r) => r.id === found.requestId) || null);
+      } else {
+        setRelatedRequest(null);
+      }
+      if (found) {
+        const projects = await adminApi.listProjects();
+        setRelatedProject(projects.find((p) => p.contractId === found.id) || null);
+        const [c, co] = await Promise.all([
+          adminApi.getClient(found.clientId),
+          adminApi.getContractor(found.contractorId),
+        ]);
+        setClient(c ? { name: c.name, phone: c.phone } : found.clientName ? { name: found.clientName } : null);
+        setContractor(co);
+      }
     } catch (error) {
       console.error('Load error:', error);
     } finally {
@@ -49,11 +68,7 @@ export const ContractDetailsPage: React.FC = () => {
     );
   }
 
-  // العلاقات
-  const relatedRequest = mockRequests.find(r => r.id === contract.requestId);
-  const client = mockUsers.find(u => u.id === contract.clientId);
-  const contractor = mockUsers.find(u => u.id === contract.contractorId) as ContractorProfile | undefined;
-  const contractorCompanyName = contractor?.companyName || contractor?.name || '';
+  const contractorCompanyName = contractor?.companyName || contractor?.name || contract.contractorName || '';
 
   const handleExportPDF = () => {
     // TODO: Implement PDF export logic
@@ -81,7 +96,12 @@ export const ContractDetailsPage: React.FC = () => {
         <Card>
           <div className="text-center space-y-2">
             <h2 className="text-2xl font-bold text-[#111111]">عقد تنفيذ أعمال</h2>
-            <p className="text-[#666666]">رقم العقد: {contract.id}</p>
+            <p className="text-[#111111] font-medium">
+              رقم العقد: {contract.contractNumber || contract.id}
+            </p>
+            {contract.contractNumber && contract.contractNumber !== contract.id && (
+              <p className="text-xs text-[#999999]">معرّف النظام: {contract.id}</p>
+            )}
             <p className="text-[#666666]">تاريخ العقد: {formatDate(contract.createdAt)}</p>
           </div>
         </Card>

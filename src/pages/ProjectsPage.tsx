@@ -7,14 +7,15 @@ import { Button } from '../components/Button';
 import { EmptyState } from '../components/EmptyState';
 import { Info } from 'lucide-react';
 import { adminApi } from '../services/api';
-import type { Project, ServiceRequest } from '../types';
-import { RequestStatus } from '../types';
-import { mockUsers, mockContracts, mockProjects, mockRequests } from '../mock/data';
+import type { Project, ServiceRequest, Contract, QuickServiceOrder } from '../types';
 import { formatDate, formatCurrency } from '../utils/formatters';
 
 export const ProjectsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [requests, setRequests] = useState<ServiceRequest[]>([]);
+  const [quickOrders, setQuickOrders] = useState<QuickServiceOrder[]>([]);
+  const [contracts, setContracts] = useState<Contract[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
@@ -24,9 +25,16 @@ export const ProjectsPage: React.FC = () => {
   const loadProjects = async () => {
     try {
       setLoading(true);
-      const allProjects = await adminApi.listProjects();
-      // Projects are only for accepted regular requests
+      const [allProjects, r, o, c] = await Promise.all([
+        adminApi.listProjects(),
+        adminApi.listRequests(),
+        adminApi.listQuickServiceOrders(),
+        adminApi.listContracts(),
+      ]);
       setProjects(allProjects);
+      setRequests(r);
+      setQuickOrders(o);
+      setContracts(c);
     } catch (error) {
       console.error('Load error:', error);
     } finally {
@@ -40,28 +48,44 @@ export const ProjectsPage: React.FC = () => {
     // Search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(p => {
-        const request = mockRequests.find(r => r.id === p.requestId);
-        const client = mockUsers.find(u => u.id === p.clientId);
-        const contractor = mockUsers.find(u => u.id === p.contractorId);
+      filtered = filtered.filter((p) => {
+        const request = requests.find((r) => r.id === p.requestId);
+        const qo = quickOrders.find((o) => o.id === p.requestId);
         return (
+          (p.projectNumber || '').toLowerCase().includes(query) ||
           p.id.toLowerCase().includes(query) ||
           p.title.toLowerCase().includes(query) ||
           (request?.title || '').toLowerCase().includes(query) ||
           (request?.serviceName || '').toLowerCase().includes(query) ||
           (request?.id || '').toLowerCase().includes(query) ||
-          client?.name.toLowerCase().includes(query) ||
-          contractor?.name.toLowerCase().includes(query)
+          (qo?.title || '').toLowerCase().includes(query) ||
+          (qo?.serviceTitle || '').toLowerCase().includes(query) ||
+          (p.clientName || '').toLowerCase().includes(query) ||
+          (p.contractorName || '').toLowerCase().includes(query)
         );
       });
     }
 
     return filtered;
-  }, [projects, searchQuery]);
+  }, [projects, searchQuery, requests, quickOrders]);
 
   const handleExport = () => {
     // TODO: Implement export functionality
     console.log('Export projects:', filteredProjects);
+  };
+
+  const displayProjectRef = (p: Project) => p.projectNumber || p.id;
+
+  const linkedRequestLabel = (project: Project) => {
+    const request = requests.find((r) => r.id === project.requestId);
+    const qo = quickOrders.find((o) => o.id === project.requestId);
+    return (
+      request?.title ||
+      qo?.title ||
+      qo?.serviceTitle ||
+      project.title ||
+      project.requestId
+    );
   };
 
   const columns = [
@@ -70,27 +94,35 @@ export const ProjectsPage: React.FC = () => {
       label: 'رقم المشروع',
       render: (project: Project) => (
         <Link to={`/projects/${project.id}`} className="text-blue-600 hover:underline font-medium">
-          {project.id}
+          {displayProjectRef(project)}
         </Link>
       ),
     },
     {
       key: 'requestId',
       label: 'الطلب المرتبط',
-      render: (project: Project) => (
-        <Link to={`/requests/regular/${project.requestId}`} className="text-blue-600 hover:underline">
-          {project.requestId}
-        </Link>
-      ),
+      render: (project: Project) => {
+        const isQuick = quickOrders.some((o) => o.id === project.requestId);
+        const path = isQuick
+          ? `/requests/quick/${project.requestId}`
+          : `/requests/regular/${project.requestId}`;
+        const label = linkedRequestLabel(project);
+        return (
+          <Link to={path} className="text-blue-600 hover:underline">
+            {label}
+          </Link>
+        );
+      },
     },
     {
       key: 'title',
       label: 'العنوان',
       render: (project: Project) => {
-        const request = mockRequests.find(r => r.id === project.requestId);
+        const request = requests.find((r) => r.id === project.requestId);
+        const qo = quickOrders.find((o) => o.id === project.requestId);
         return (
           <Link to={`/projects/${project.id}`} className="text-blue-600 hover:underline">
-            {request?.title || project.title}
+            {request?.title || qo?.title || project.title}
           </Link>
         );
       },
@@ -99,43 +131,43 @@ export const ProjectsPage: React.FC = () => {
       key: 'serviceName',
       label: 'اسم الخدمة',
       render: (project: Project) => {
-        const request = mockRequests.find(r => r.id === project.requestId);
-        return request?.serviceName || '-';
+        const request = requests.find((r) => r.id === project.requestId);
+        const qo = quickOrders.find((o) => o.id === project.requestId);
+        return request?.serviceName || qo?.serviceTitle || '-';
       },
     },
     {
       key: 'client',
       label: 'العميل',
-      render: (project: Project) => {
-        const client = mockUsers.find(u => u.id === project.clientId);
-        return client ? (
-          <Link to={`/users/clients/${client.id}`} className="text-blue-600 hover:underline">
-            {client.name}
+      render: (project: Project) =>
+        project.clientId ? (
+          <Link to={`/users/clients/${project.clientId}`} className="text-blue-600 hover:underline">
+            {project.clientName || project.clientId}
           </Link>
         ) : (
           <span className="text-gray-400">-</span>
-        );
-      },
+        ),
     },
     {
       key: 'contractor',
       label: 'المقاول',
-      render: (project: Project) => {
-        const contractor = mockUsers.find(u => u.id === project.contractorId);
-        return contractor ? (
-          <Link to={`/users/contractors/${contractor.id}`} className="text-blue-600 hover:underline">
-            {contractor.name}
+      render: (project: Project) =>
+        project.contractorId ? (
+          <Link
+            to={`/users/contractors/${project.contractorId}`}
+            className="text-blue-600 hover:underline"
+          >
+            {project.contractorName || project.contractorId}
           </Link>
         ) : (
           <span className="text-gray-400">-</span>
-        );
-      },
+        ),
     },
     {
       key: 'totalPrice',
       label: 'السعر الإجمالي',
       render: (project: Project) => {
-        const contract = mockContracts.find(c => c.id === project.contractId);
+        const contract = contracts.find((c) => c.id === project.contractId);
         return contract ? formatCurrency(contract.totalPrice) : <span className="text-gray-400">-</span>;
       },
     },
@@ -143,8 +175,11 @@ export const ProjectsPage: React.FC = () => {
       key: 'location',
       label: 'الموقع',
       render: (project: Project) => {
-        const request = mockRequests.find(r => r.id === project.requestId);
-        return request ? `${request.location.city}، ${request.location.district}` : '-';
+        const request = requests.find((r) => r.id === project.requestId);
+        const qo = quickOrders.find((o) => o.id === project.requestId);
+        if (request) return `${request.location.city}، ${request.location.district}`;
+        if (qo) return `${qo.location.city}، ${qo.location.district}`;
+        return '-';
       },
     },
     {

@@ -88,11 +88,13 @@ export enum QuickServiceOrderStatus {
 
 // 1. User - المستخدم الأساسي
 export interface User {
-  id: string;              // رقم الهوية الوطنية
+  id: string;              // معرف المستخدم في النظام (Mongo ObjectId) — روابط التفاصيل
   phone: string;           // رقم الجوال
   name: string;            // الاسم الكامل
   email?: string;          // البريد الإلكتروني (اختياري)
   role: UserRole;          // الدور
+  /** رقم الهوية الوطنية عند توفره (من التسجيل / نفاذ) */
+  pid?: string;
   isActive?: boolean;       // حالة الحساب - نشط/معطل (للوحة التحكم)
   createdAt: string;       // تاريخ الإنشاء
 }
@@ -141,6 +143,10 @@ export interface ContractorProfile extends User {
 export interface ServiceRequest {
   id: string;                              // معرف الطلب
   clientId: string;                        // معرف العميل
+  /** اسم العميل (قائمة لوحة التحكم من الـ API) */
+  clientName?: string;
+  /** المقاول المقبول عند قبول الطلب */
+  contractorId?: string;
   serviceId: string;                       // معرف الخدمة
   serviceName: string;                     // اسم الخدمة
   title: string;                           // عنوان الطلب
@@ -171,6 +177,8 @@ export interface ServiceRequest {
 export interface QuickServiceOrder {
   id: string;                              // معرف الطلب
   clientId: string;                        // معرف العميل
+  /** اسم العميل (قائمة لوحة التحكم من الـ API) */
+  clientName?: string;
   serviceId: string;                       // معرف الخدمة السريعة
   serviceTitle: string;                   // عنوان الخدمة السريعة
   title?: string;                          // عنوان الطلب (اختياري)
@@ -211,6 +219,8 @@ export interface QuickService {
 // 8. Quotation - العرض
 export interface Quotation {
   id: string;                              // معرف العرض
+  /** مرجع للعرض (OF-YYYY-… أو OF-LEG-… للقديم) — ليس معرف Mongo */
+  quotationNumber?: string;
   requestId: string;                      // معرف الطلب
   contractorId: string;                   // معرف المقاول
   contractorName: string;                 // اسم المقاول
@@ -238,6 +248,16 @@ export interface Quotation {
   attachments: string[];                  // المرفقات
   status: QuotationStatus;               // الحالة
   createdAt: string;                     // تاريخ الإنشاء
+  /** لوحة التحكم — من `GET /admin/quotations` */
+  requestKind?: 'regular' | 'quick' | 'unknown';
+  requestTitle?: string;
+  clientId?: string;
+  clientName?: string;
+  /** تفاصيل العرض — من `GET /admin/quotations/:id` */
+  relatedContractId?: string;
+  relatedProjectId?: string;
+  client?: { id: string; name: string; phone: string; email?: string };
+  contractor?: { id: string; name: string; phone: string; email?: string };
 }
 
 // 9. Milestone - المعلم/الدفعة
@@ -264,11 +284,18 @@ export interface Contract {
   duration: number;                      // المدة (بالأيام)
   milestones: Milestone[];               // المعالم/الدفعات
   createdAt: string;                     // تاريخ الإنشاء
+  contractNumber?: string;
+  status?: string;
+  activatedAt?: string;
+  clientName?: string;
+  contractorName?: string;
 }
 
 // 11. Project - المشروع
 export interface Project {
   id: string;                              // معرف المشروع
+  /** مرجع للعرض (PR-YYYY-… أو PR-LEG-… للقديم) */
+  projectNumber?: string;
   contractId: string;                    // معرف العقد
   requestId: string;                     // معرف الطلب
   clientId: string;                      // معرف العميل
@@ -278,11 +305,17 @@ export interface Project {
   progress: number;                      // التقدم (0-100)
   createdAt: string;                     // تاريخ الإنشاء
   updatedAt: string;                     // تاريخ التحديث
+  clientName?: string;
+  contractorName?: string;
+  clientPhone?: string;
+  rating?: number;
 }
 
 // 12. Invoice - الفاتورة
 export interface Invoice {
-  id: string;                              // معرف الفاتورة (مثل: "INV-2026-5488")
+  id: string;                              // معرف الفاتورة في النظام (ObjectId من الخادم)
+  /** رقم الفاتورة للعرض (مثل INV-XXXXXXXX؛ يطابق مرجع PDF) */
+  invoiceNumber?: string;
   projectId: string;                     // معرف المشروع
   contractorId: string;                  // معرف المقاول
   clientId: string;                      // معرف العميل
@@ -300,6 +333,15 @@ export interface Invoice {
   attachments: string[];                 // المرفقات
   createdAt: string;                     // تاريخ الإنشاء
   paidAt?: string;                       // تاريخ الدفع (عندما تكون مدفوعة)
+  clientName?: string;
+  contractorName?: string;
+  /** من الخادم: وصف الدفعة من العقد (مثال: الدفعة 1 - العربون) */
+  milestoneLabel?: string;
+  /** عنوان المشروع المرتبط */
+  projectTitle?: string;
+  hasPdf?: boolean;
+  pdfUrl?: string;
+  updatedAt?: string;
 }
 
 // 13. Payment - الدفع
@@ -319,6 +361,14 @@ export interface Payment {
   refundReason?: string;                // سبب الاسترداد (للوحة التحكم)
   refundedBy?: string;                  // من قام بالاسترداد - معرف المشرف (للوحة التحكم)
   createdAt: string;                     // تاريخ الإنشاء
+  /** من الخادم بعد إثراء الفاتورة والمستخدمين */
+  clientId?: string;
+  contractorId?: string;
+  clientName?: string;
+  contractorName?: string;
+  invoiceNumber?: string;
+  invoiceTitle?: string;
+  milestoneLabel?: string;
 }
 
 // 13.5. Settlement - التسوية
@@ -351,6 +401,21 @@ export interface Complaint {
   respondedAt?: string;                  // تاريخ الرد
   respondedBy?: string;                 // من قام بالرد
   createdAt: string;                     // تاريخ الإنشاء
+  updatedAt?: string;
+  clientName?: string;
+  contractorName?: string;
+  projectTitle?: string;
+  /** طلب الخدمة المرتبط بالمشروع (من الخادم) */
+  requestId?: string;
+  requestTitle?: string;
+  /** مراجع للعرض (ليست معرفات Mongo) */
+  publicReference?: string;
+  complaintNumber?: string;
+  requestReference?: string;
+  projectReference?: string;
+  clientReference?: string;
+  contractorReference?: string;
+  respondedByName?: string;
 }
 
 // 15. ProjectReport - تقرير المشروع
@@ -376,6 +441,29 @@ export interface ChatThread {
   lastMessage?: ChatMessage;             // آخر رسالة
   unreadCount: number;                   // عدد الرسائل غير المقروءة
   updatedAt: string;                     // تاريخ التحديث
+  /** Enriched by admin API */
+  clientName?: string;
+  contractorName?: string;
+  clientPhone?: string;
+  contractorPhone?: string;
+  relatedTitle?: string;
+  filterRequestId?: string;
+  requestKind?: 'quick' | 'regular';
+}
+
+export interface ChatPlatformSettings {
+  hideChatDuringOffers: boolean;
+  hideChatAfterAward: boolean;
+  disableChatCompletely: boolean;
+}
+
+export interface ChatPairBlock {
+  id: string;
+  clientId: string;
+  contractorId: string;
+  clientName?: string;
+  contractorName?: string;
+  createdAt: string;
 }
 
 // 17. ChatMessage - رسالة المحادثة
@@ -399,6 +487,10 @@ export interface Notification {
   relatedId?: string;                   // معرف العنصر المرتبط
   read: boolean;                        // مقروء/غير مقروء
   createdAt: string;                    // تاريخ الإنشاء
+  code?: string;
+  userName?: string;
+  /** App user role (CLIENT | CONTRACTOR) for admin list/detail */
+  userRole?: string;
 }
 
 // 19. ServiceGroup - مجموعة الخدمات
@@ -456,6 +548,8 @@ export interface Rating {
   requestId?: string;                     // معرف الطلب (إن كان مرتبطاً بطلب)
   contractorId: string;                  // معرف المقاول المقيّم
   clientId: string;                       // معرف العميل المقيّم
+  /** اسم العميل عند جلب التقييمات من لوحة التحكم */
+  clientName?: string;
   rating: number;                         // النجوم (1-5)
   tags?: string[];                        // الصفات (مثل: التزام، جودة، سرعة، تعامل)
   comment?: string;                       // التعليق (نص متعدد الأسطر)
@@ -483,6 +577,7 @@ export interface SupportTicket {
   replies?: SupportTicketReply[];         // الردود
   createdAt: string;                     // تاريخ الإنشاء
   updatedAt: string;                     // تاريخ آخر تحديث
+  userName?: string;
 }
 
 // 26. SupportTicketReply - رد تذكرة الدعم

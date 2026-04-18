@@ -7,10 +7,13 @@ import { Modal } from '../components/Modal';
 import { EmptyState } from '../components/EmptyState';
 import { adminApi } from '../services/api';
 import type { Complaint } from '../types';
-import { ComplaintType, ComplaintStatus } from '../types';
-import { mockUsers, mockProjects, mockRequests } from '../mock/data';
+import { ComplaintType } from '../types';
 import { formatDate, formatDateTime } from '../utils/formatters';
 import { Info, ArrowRight } from 'lucide-react';
+
+function complaintDisplayRef(c: Complaint): string {
+  return (c.publicReference && c.publicReference.trim()) || c.id;
+}
 
 const COMPLAINT_TYPE_LABELS: Record<ComplaintType, string> = {
   [ComplaintType.DELAY]: 'تأخير',
@@ -31,6 +34,8 @@ export const ComplaintDetailsPage: React.FC = () => {
 
   // Form states
   const [responseText, setResponseText] = useState('');
+  const [replySubmitting, setReplySubmitting] = useState(false);
+  const [replyError, setReplyError] = useState<string | null>(null);
 
   useEffect(() => {
     if (id) {
@@ -54,20 +59,21 @@ export const ComplaintDetailsPage: React.FC = () => {
   };
 
   const handleSaveResponse = async () => {
-    if (!complaint) return;
+    if (!complaint || !responseText.trim()) return;
+    setReplyError(null);
+    setReplySubmitting(true);
     try {
-      // TODO: API call
-      const now = new Date().toISOString();
-      setComplaint({
-        ...complaint,
-        response: responseText,
-        respondedAt: now,
-        respondedBy: 'admin1', // TODO: Get from auth context
-        status: ComplaintStatus.IN_REVIEW,
-      });
+      const updated = await adminApi.respondComplaint(complaint.id, responseText.trim());
+      setComplaint(updated);
+      setResponseText(updated.response || '');
       setShowResponseModal(false);
     } catch (error) {
+      const msg =
+        error instanceof Error ? error.message : 'تعذر حفظ الرد. تحقق من الاتصال وحاول مرة أخرى.';
+      setReplyError(msg);
       console.error('Save response error:', error);
+    } finally {
+      setReplySubmitting(false);
     }
   };
 
@@ -87,10 +93,6 @@ export const ComplaintDetailsPage: React.FC = () => {
     );
   }
 
-  const project = mockProjects.find(p => p.id === complaint.projectId);
-  const client = mockUsers.find(u => u.id === complaint.clientId);
-  const contractor = mockUsers.find(u => u.id === complaint.contractorId);
-
   return (
     <div className="space-y-6">
       <div>
@@ -99,13 +101,17 @@ export const ComplaintDetailsPage: React.FC = () => {
           العودة إلى الشكاوى
         </Button>
         <h1 className="text-2xl font-semibold text-[#111111]">تفاصيل الشكوى</h1>
-        <p className="text-sm text-gray-600 mt-1">
-          معرف الشكوى: {complaint.id}
-        </p>
+        <p className="text-sm text-gray-600 mt-1">رقم الشكوى: {complaintDisplayRef(complaint)}</p>
       </div>
       {!complaint.response && (
         <div className="mb-4">
-          <Button variant="primary" onClick={() => setShowResponseModal(true)}>
+          <Button
+            variant="primary"
+            onClick={() => {
+              setReplyError(null);
+              setShowResponseModal(true);
+            }}
+          >
             الرد على الشكوى
           </Button>
         </div>
@@ -115,8 +121,8 @@ export const ComplaintDetailsPage: React.FC = () => {
       <Card title="معلومات الشكوى">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <p className="text-sm text-gray-600 mb-1">معرف الشكوى</p>
-            <p className="text-[#111111] font-medium">{complaint.id}</p>
+            <p className="text-sm text-gray-600 mb-1">رقم الشكوى</p>
+            <p className="text-[#111111] font-medium">{complaintDisplayRef(complaint)}</p>
           </div>
           <div>
             <p className="text-sm text-gray-600 mb-1">النوع</p>
@@ -153,86 +159,94 @@ export const ComplaintDetailsPage: React.FC = () => {
         </div>
       </Card>
 
-      {/* Related Entities */}
-      {project && (() => {
-        const request = mockRequests.find(r => r.id === project.requestId);
-        return request ? (
-          <Card title="معلومات الطلب">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <p className="text-sm text-gray-600">عنوان الطلب</p>
-                <Link to={`/requests/regular/${request.id}`} className="text-blue-600 hover:underline">
-                  {request.title}
+      {(complaint.requestId && (complaint.requestTitle || '').trim()) ||
+      (complaint.projectId && (complaint.projectTitle || '').trim()) ? (
+        <Card title="الطلب والمشروع">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {complaint.requestId && (complaint.requestTitle || '').trim() ? (
+              <>
+                <div>
+                  <p className="text-sm text-gray-600">عنوان الطلب</p>
+                  <Link
+                    to={`/requests/regular/${complaint.requestId}`}
+                    className="text-blue-600 hover:underline"
+                  >
+                    {complaint.requestTitle}
+                  </Link>
+                </div>
+                {complaint.requestReference ? (
+                  <div>
+                    <p className="text-sm text-gray-600">رقم مرجع الطلب</p>
+                    <p className="text-[#111111] font-medium">{complaint.requestReference}</p>
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+            {complaint.projectId ? (
+              <div className={complaint.requestId ? 'md:col-span-2' : ''}>
+                <p className="text-sm text-gray-600">المشروع</p>
+                <Link
+                  to={`/projects/${complaint.projectId}`}
+                  className="text-blue-600 hover:underline"
+                >
+                  {(complaint.projectTitle || '').trim() || 'عرض المشروع'}
                 </Link>
+                {complaint.projectReference ? (
+                  <p className="text-sm text-gray-600 mt-1">
+                    رقم المشروع:{' '}
+                    <span className="text-[#111111] font-medium">{complaint.projectReference}</span>
+                  </p>
+                ) : null}
               </div>
-              <div>
-                <p className="text-sm text-gray-600">معرف الطلب</p>
-                <p className="text-[#111111]">{request.id}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">الحالة</p>
-                <StatusBadge status={request.status} />
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">اسم الخدمة</p>
-                <p className="text-[#111111]">{request.serviceName}</p>
-              </div>
-            </div>
-          </Card>
-        ) : null;
-      })()}
+            ) : null}
+          </div>
+        </Card>
+      ) : null}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {client && (
+        {complaint.clientId && (complaint.clientName || '').trim() ? (
           <Card title="معلومات العميل">
             <div className="space-y-2">
               <div>
                 <p className="text-sm text-gray-600">الاسم</p>
-                <Link to={`/users/clients/${client.id}`} className="text-blue-600 hover:underline">
-                  {client.name}
+                <Link
+                  to={`/users/clients/${complaint.clientId}`}
+                  className="text-blue-600 hover:underline"
+                >
+                  {complaint.clientName}
                 </Link>
               </div>
-              <div>
-                <p className="text-sm text-gray-600">معرف العميل</p>
-                <p className="text-[#111111]">{client.id}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">رقم الجوال</p>
-                <p className="text-[#111111]">{client.phone}</p>
-              </div>
+              {complaint.clientReference ? (
+                <div>
+                  <p className="text-sm text-gray-600">رقم مرجع الحساب</p>
+                  <p className="text-[#111111] font-medium">{complaint.clientReference}</p>
+                </div>
+              ) : null}
             </div>
           </Card>
-        )}
+        ) : null}
 
-        {contractor && (
+        {complaint.contractorId && (complaint.contractorName || '').trim() ? (
           <Card title="معلومات المقاول">
             <div className="space-y-2">
               <div>
-                <p className="text-sm text-gray-600">الاسم</p>
+                <p className="text-sm text-gray-600">الاسم / الشركة</p>
                 <Link
-                  to={`/users/contractors/${contractor.id}`}
+                  to={`/users/contractors/${complaint.contractorId}`}
                   className="text-blue-600 hover:underline"
                 >
-                  {contractor.name}
+                  {complaint.contractorName}
                 </Link>
               </div>
-              <div>
-                <p className="text-sm text-gray-600">معرف المقاول</p>
-                <p className="text-[#111111]">{contractor.id}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">رقم الجوال</p>
-                <p className="text-[#111111]">{contractor.phone}</p>
-              </div>
-              {'companyName' in contractor && contractor.companyName && (
+              {complaint.contractorReference ? (
                 <div>
-                  <p className="text-sm text-gray-600">اسم الشركة</p>
-                  <p className="text-[#111111]">{contractor.companyName}</p>
+                  <p className="text-sm text-gray-600">رقم مرجع الحساب</p>
+                  <p className="text-[#111111] font-medium">{complaint.contractorReference}</p>
                 </div>
-              )}
+              ) : null}
             </div>
           </Card>
-        )}
+        ) : null}
       </div>
 
       {/* Response Section */}
@@ -251,11 +265,11 @@ export const ComplaintDetailsPage: React.FC = () => {
                 </p>
               </div>
             )}
-            {complaint.respondedBy && (
+            {(complaint.respondedByName || complaint.respondedBy) && (
               <div>
                 <p className="text-sm text-gray-600 mb-1">من قام بالرد</p>
                 <p className="text-[#111111] font-medium">
-                  {complaint.respondedBy} {/* TODO: Get admin name */}
+                  {complaint.respondedByName || complaint.respondedBy}
                 </p>
               </div>
             )}
@@ -286,6 +300,12 @@ export const ComplaintDetailsPage: React.FC = () => {
             </div>
           </div>
 
+          {replyError ? (
+            <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-800">
+              {replyError}
+            </div>
+          ) : null}
+
           {/* Reply Input */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -295,7 +315,8 @@ export const ComplaintDetailsPage: React.FC = () => {
               value={responseText}
               onChange={(e) => setResponseText(e.target.value)}
               rows={8}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors resize-y"
+              disabled={replySubmitting}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors resize-y disabled:opacity-60"
               placeholder="أدخل رد الإدارة على الشكوى..."
               required
             />
@@ -319,13 +340,13 @@ export const ComplaintDetailsPage: React.FC = () => {
             >
               إلغاء
             </Button>
-            <Button 
-              variant="primary" 
-              onClick={handleSaveResponse} 
-              disabled={!responseText.trim()}
+            <Button
+              variant="primary"
+              onClick={handleSaveResponse}
+              disabled={!responseText.trim() || replySubmitting}
               className="min-w-[120px]"
             >
-              إرسال وحفظ
+              {replySubmitting ? 'جاري الإرسال...' : 'إرسال وحفظ'}
             </Button>
           </div>
         </div>

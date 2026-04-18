@@ -9,10 +9,9 @@ import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import { EmptyState } from '../components/EmptyState';
 import { adminApi } from '../services/api';
-import type { Quotation } from '../types';
+import type { Quotation, ServiceRequest, QuickServiceOrder } from '../types';
 import { QuotationStatus } from '../types';
 import { formatSar, formatDate } from '../utils/formatters';
-import { mockUsers, mockRequests, mockQuickServiceOrders, mockQuotations } from '../mock/data';
 
 const STATUS_TABS = [
   { label: 'الكل', value: 'all' },
@@ -25,6 +24,8 @@ export const QuotationsPage: React.FC = () => {
   const [statusTab, setStatusTab] = useState<string>('all');
   const [loading, setLoading] = useState(true);
   const [quotations, setQuotations] = useState<Quotation[]>([]);
+  const [requests, setRequests] = useState<ServiceRequest[]>([]);
+  const [quickOrders, setQuickOrders] = useState<QuickServiceOrder[]>([]);
   
   // فلاتر
   const [search, setSearch] = useState('');
@@ -39,14 +40,20 @@ export const QuotationsPage: React.FC = () => {
   const [createdTo, setCreatedTo] = useState('');
 
   useEffect(() => {
-    loadQuotations();
-  }, [statusTab]);
+    loadData();
+  }, []);
 
-  const loadQuotations = async () => {
+  const loadData = async () => {
     try {
       setLoading(true);
-      const data = await adminApi.listQuotations();
-      setQuotations(data);
+      const [qRows, rRows, oRows] = await Promise.all([
+        adminApi.listQuotations(),
+        adminApi.listRequests(),
+        adminApi.listQuickServiceOrders(),
+      ]);
+      setQuotations(qRows);
+      setRequests(rRows);
+      setQuickOrders(oRows);
     } catch (error) {
       console.error('Load error:', error);
     } finally {
@@ -54,70 +61,68 @@ export const QuotationsPage: React.FC = () => {
     }
   };
 
-  // تحديد نوع الطلب (عادي أو خدمة سريعة)
-  const getRequestType = (requestId: string): 'regular' | 'quick' => {
-    const regularRequest = mockRequests.find(r => r.id === requestId);
-    if (regularRequest) return 'regular';
-    const quickOrder = mockQuickServiceOrders.find(q => q.id === requestId);
-    if (quickOrder) return 'quick';
-    return 'regular'; // افتراضي
+  const getRequestType = (q: Quotation): 'regular' | 'quick' => {
+    if (q.requestKind === 'regular') return 'regular';
+    if (q.requestKind === 'quick') return 'quick';
+    if (requests.some((r) => r.id === q.requestId)) return 'regular';
+    if (quickOrders.some((o) => o.id === q.requestId)) return 'quick';
+    return 'regular';
+  };
+
+  const requestTitleFor = (q: Quotation): string => {
+    if (q.requestTitle) return q.requestTitle;
+    const r = requests.find((x) => x.id === q.requestId);
+    if (r) return r.title;
+    const o = quickOrders.find((x) => x.id === q.requestId);
+    return o?.title || o?.serviceTitle || '-';
   };
 
   // Get unique contractors for searchable select
   const uniqueContractors = useMemo(() => {
-    const contractorMap = new Map();
-    mockQuotations.forEach(q => {
+    const contractorMap = new Map<string, { label: string; value: string }>();
+    quotations.forEach((q) => {
       if (!contractorMap.has(q.contractorId)) {
         contractorMap.set(q.contractorId, {
           label: q.contractorName,
-          value: q.contractorId
+          value: q.contractorId,
         });
       }
     });
     return Array.from(contractorMap.values());
-  }, []);
+  }, [quotations]);
 
-  // Get unique requests for searchable select
   const uniqueRequests = useMemo(() => {
-    const requestMap = new Map();
-    mockRequests.forEach(r => {
-      requestMap.set(r.id, {
-        label: r.title,
-        value: r.id
-      });
+    const requestMap = new Map<string, { label: string; value: string }>();
+    requests.forEach((r) => {
+      requestMap.set(r.id, { label: r.title, value: r.id });
     });
-    mockQuickServiceOrders.forEach(q => {
-      requestMap.set(q.id, {
-        label: q.title || q.serviceTitle,
-        value: q.id
-      });
+    quickOrders.forEach((q) => {
+      requestMap.set(q.id, { label: q.title || q.serviceTitle, value: q.id });
     });
     return Array.from(requestMap.values());
-  }, []);
+  }, [requests, quickOrders]);
 
-  // Get unique clients for searchable select
   const uniqueClients = useMemo(() => {
-    const clientMap = new Map();
-    mockRequests.forEach(r => {
-      const client = mockUsers.find(u => u.id === r.clientId);
-      if (client && !clientMap.has(client.id)) {
-        clientMap.set(client.id, {
-          label: client.name,
-          value: client.id
-        });
+    const clientMap = new Map<string, { label: string; value: string }>();
+    requests.forEach((r) => {
+      const name = r.clientName || r.clientId;
+      if (r.clientId && !clientMap.has(r.clientId)) {
+        clientMap.set(r.clientId, { label: name, value: r.clientId });
       }
     });
-    mockQuickServiceOrders.forEach(q => {
-      const client = mockUsers.find(u => u.id === q.clientId);
-      if (client && !clientMap.has(client.id)) {
-        clientMap.set(client.id, {
-          label: client.name,
-          value: client.id
-        });
+    quickOrders.forEach((q) => {
+      const name = q.clientName || q.clientId;
+      if (q.clientId && !clientMap.has(q.clientId)) {
+        clientMap.set(q.clientId, { label: name, value: q.clientId });
+      }
+    });
+    quotations.forEach((q) => {
+      if (q.clientId && q.clientName && !clientMap.has(q.clientId)) {
+        clientMap.set(q.clientId, { label: q.clientName, value: q.clientId });
       }
     });
     return Array.from(clientMap.values());
-  }, []);
+  }, [requests, quickOrders, quotations]);
 
   // فلترة العروض
   const filteredQuotations = useMemo(() => {
@@ -135,11 +140,13 @@ export const QuotationsPage: React.FC = () => {
     
     if (search) {
       const searchLower = search.toLowerCase();
-      filtered = filtered.filter(q => 
-        q.contractorName.toLowerCase().includes(searchLower) ||
-        (mockRequests.find(r => r.id === q.requestId)?.title || '').toLowerCase().includes(searchLower) ||
-        (mockQuickServiceOrders.find(qo => qo.id === q.requestId)?.title || '').toLowerCase().includes(searchLower) ||
-        (q.notes || '').toLowerCase().includes(searchLower)
+      filtered = filtered.filter(
+        (q) =>
+          q.contractorName.toLowerCase().includes(searchLower) ||
+          requestTitleFor(q).toLowerCase().includes(searchLower) ||
+          (q.notes || '').toLowerCase().includes(searchLower) ||
+          (q.quotationNumber || '').toLowerCase().includes(searchLower) ||
+          q.id.toLowerCase().includes(searchLower)
       );
     }
     
@@ -152,17 +159,20 @@ export const QuotationsPage: React.FC = () => {
     }
     
     if (client) {
-      filtered = filtered.filter(q => {
-        const regularRequest = mockRequests.find(r => r.id === q.requestId);
-        const quickOrder = mockQuickServiceOrders.find(qo => qo.id === q.requestId);
-        return (regularRequest && regularRequest.clientId === client) || 
-               (quickOrder && quickOrder.clientId === client);
+      filtered = filtered.filter((q) => {
+        if (q.clientId) return q.clientId === client;
+        const regularRequest = requests.find((r) => r.id === q.requestId);
+        const quickOrder = quickOrders.find((qo) => qo.id === q.requestId);
+        return (
+          (regularRequest && regularRequest.clientId === client) ||
+          (quickOrder && quickOrder.clientId === client)
+        );
       });
     }
-    
+
     if (requestType) {
-      filtered = filtered.filter(q => {
-        const type = getRequestType(q.requestId);
+      filtered = filtered.filter((q) => {
+        const type = getRequestType(q);
         return requestType === 'regular' ? type === 'regular' : type === 'quick';
       });
     }
@@ -184,16 +194,33 @@ export const QuotationsPage: React.FC = () => {
     }
     
     return filtered;
-  }, [quotations, statusTab, search, status, contractor, request, client, requestType, priceMin, priceMax, createdFrom, createdTo]);
+  }, [
+    quotations,
+    statusTab,
+    search,
+    status,
+    contractor,
+    request,
+    client,
+    requestType,
+    priceMin,
+    priceMax,
+    createdFrom,
+    createdTo,
+    requests,
+    quickOrders,
+  ]);
 
   // أعمدة الجدول
+  const displayQuotationRef = (q: Quotation) => q.quotationNumber || q.id;
+
   const columns = [
     {
       key: 'id',
       label: 'رقم العرض',
       render: (quotation: Quotation) => (
         <Link to={`/quotations/${quotation.id}`} className="text-blue-600 hover:underline font-medium">
-          {quotation.id}
+          {displayQuotationRef(quotation)}
         </Link>
       )
     },
@@ -210,14 +237,15 @@ export const QuotationsPage: React.FC = () => {
       key: 'request', 
       label: 'الطلب المرتبط',
       render: (quotation: Quotation) => {
-        const regularRequest = mockRequests.find(r => r.id === quotation.requestId);
-        const quickOrder = mockQuickServiceOrders.find(q => q.id === quotation.requestId);
-        const requestTitle = regularRequest?.title || quickOrder?.title || quickOrder?.serviceTitle || '-';
-        const requestType = regularRequest ? 'regular' : 'quick';
-        const path = requestType === 'regular' ? `/requests/regular/${quotation.requestId}` : `/requests/quick/${quotation.requestId}`;
+        const title = requestTitleFor(quotation);
+        const rt = getRequestType(quotation);
+        const path =
+          rt === 'regular'
+            ? `/requests/regular/${quotation.requestId}`
+            : `/requests/quick/${quotation.requestId}`;
         return (
           <Link to={path} className="text-blue-600 hover:underline">
-            {requestTitle}
+            {title}
           </Link>
         );
       }
@@ -226,7 +254,7 @@ export const QuotationsPage: React.FC = () => {
       key: 'requestType', 
       label: 'نوع الطلب',
       render: (quotation: Quotation) => {
-        const type = getRequestType(quotation.requestId);
+        const type = getRequestType(quotation);
         return (
           <span className={`text-xs px-2 py-1 rounded ${
             type === 'regular' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
@@ -245,7 +273,7 @@ export const QuotationsPage: React.FC = () => {
       key: 'duration', 
       label: 'المدة',
       render: (quotation: Quotation) => {
-        const type = getRequestType(quotation.requestId);
+        const type = getRequestType(quotation);
         if (type === 'regular') {
           return `${typeof quotation.duration === 'number' ? quotation.duration : quotation.duration} يوم`;
         } else {

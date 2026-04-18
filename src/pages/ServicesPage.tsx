@@ -1,13 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Tabs } from '../components/Tabs';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { Modal } from '../components/Modal';
 import { EmptyState } from '../components/EmptyState';
-import { StatusBadge } from '../components/StatusBadge';
 import { adminApi } from '../services/api';
 import type { ServiceGroup, Category, Subcategory, QuickService } from '../types';
-import { mockServiceGroups, mockCategories, mockSubcategories, mockQuickServices } from '../mock/data';
 import { IconPicker } from '../components/IconPicker';
 import * as LucideIcons from 'lucide-react';
 
@@ -68,15 +66,61 @@ const ToggleSwitch: React.FC<{
   );
 };
 
+function flattenSubcategoriesForGroup(group: ServiceGroup): Subcategory[] {
+  const out: Subcategory[] = [];
+  for (const cat of group.categories || []) {
+    for (const sub of cat.subcategories || []) {
+      out.push({
+        ...sub,
+        categoryId: sub.categoryId || cat.id,
+      });
+    }
+  }
+  return out;
+}
+
+function serviceGroupToApiPayload(g: ServiceGroup): Record<string, unknown> {
+  return {
+    name: g.name,
+    description: g.description,
+    icon: g.icon,
+    isActive: g.isActive !== false,
+    displayOrder: g.displayOrder ?? 0,
+    categories: (g.categories || []).map((c) => ({
+      id: c.id,
+      name: c.name,
+      icon: c.icon,
+      isActive: c.isActive !== false,
+      displayOrder: c.displayOrder ?? 0,
+      subcategories: (c.subcategories || []).map((s) => ({
+        id: s.id,
+        name: s.name,
+        description: s.description ?? '',
+        icon: s.icon,
+        isActive: s.isActive !== false,
+        displayOrder: s.displayOrder ?? 0,
+      })),
+    })),
+  };
+}
+
+function allCategoriesFromGroups(groups: ServiceGroup[]): Category[] {
+  return groups.flatMap((gr) =>
+    (gr.categories || []).map((c) => ({
+      ...c,
+      groupId: String(gr.id),
+      subcategories: c.subcategories || [],
+    }))
+  );
+}
+
 // ============================================
 // Regular Services Tab - المناقصات / الخدمات العادية
 // ============================================
 
 const RegularServicesTab: React.FC = () => {
   const [loading, setLoading] = useState(true);
-  const [categories, setCategories] = useState<ServiceGroup[]>([]);
-  const [allCategories, setAllCategories] = useState<Category[]>([]);
-  const [allSubcategories, setAllSubcategories] = useState<Subcategory[]>([]);
+  const [groups, setGroups] = useState<ServiceGroup[]>([]);
   const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
   const [showEditCategoryModal, setShowEditCategoryModal] = useState(false);
   const [showAddSubcategoryModal, setShowAddSubcategoryModal] = useState(false);
@@ -98,177 +142,247 @@ const RegularServicesTab: React.FC = () => {
     groupId: '', // For filtering categories when adding subcategory
   });
 
+  const mainCategorySelectOptions = useMemo(() => {
+    const all = allCategoriesFromGroups(groups);
+    const gid = String(subcategoryForm.groupId || '').trim();
+    if (!gid) return all;
+    return all.filter((c) => String(c.groupId || '') === gid);
+  }, [groups, subcategoryForm.groupId]);
+
   useEffect(() => {
     loadData();
   }, []);
 
-  const loadData = async () => {
+  const loadData = async (): Promise<ServiceGroup[]> => {
     try {
       setLoading(true);
-      const [categoriesData, allCategoriesData] = await Promise.all([
-        adminApi.listServiceGroups(),
-        adminApi.listCategories(),
-      ]);
-      setCategories(categoriesData);
-      setAllCategories(allCategoriesData);
-      setAllSubcategories(mockSubcategories);
+      const data = await adminApi.listServiceGroups();
+      setGroups(data);
+      return data;
     } catch (error) {
       console.error('Load error:', error);
+      setGroups([]);
+      return [];
     } finally {
       setLoading(false);
     }
   };
 
-  const getSubcategoriesForCategory = (groupId: string) => {
-    // Get all Category items that belong to this ServiceGroup
-    const groupCategoryIds = allCategories
-      .filter(cat => cat.groupId === groupId)
-      .map(cat => cat.id);
-    // Get all Subcategories that belong to those Categories
-    return allSubcategories.filter(sub => groupCategoryIds.includes(sub.categoryId));
+  const persistGroup = async (g: ServiceGroup) => {
+    try {
+      await adminApi.replaceServiceGroup(g.id, serviceGroupToApiPayload(g));
+      await loadData();
+    } catch (e) {
+      console.error('Save service group error:', e);
+      void loadData();
+    }
+  };
+
+  const getSubcategoriesForGroup = (groupId: string) => {
+    const g = groups.find((x) => x.id === groupId);
+    return g ? flattenSubcategoriesForGroup(g) : [];
+  };
+
+  /** Middle categories (الفئة الرئيسية) — creates a default bucket if the group has none (e.g. new groups). */
+  const openAddSubcategoryForGroup = async (group: ServiceGroup) => {
+    let g = group;
+    if (!(g.categories && g.categories.length > 0)) {
+      try {
+        setLoading(true);
+        const defaultCat: Category = {
+          id: `cat-${Date.now()}`,
+          name: 'خدمات',
+          groupId: g.id,
+          isActive: true,
+          displayOrder: 0,
+          subcategories: [],
+        };
+        await adminApi.replaceServiceGroup(g.id, serviceGroupToApiPayload({ ...g, categories: [defaultCat] }));
+        const refreshed = await loadData();
+        const found = refreshed.find((x) => String(x.id) === String(g.id));
+        if (found) g = found;
+      } catch (e) {
+        console.error('ensure default main category:', e);
+        setLoading(false);
+        return;
+      }
+    }
+    setSubcategoryForm({
+      name: '',
+      description: '',
+      icon: '',
+      categoryId: '',
+      groupId: String(g.id),
+    });
+    setShowAddSubcategoryModal(true);
   };
 
   const handleAddCategory = async () => {
+    if (!categoryForm.name.trim() || !categoryForm.description.trim()) return;
     try {
-      // TODO: API call
-      const newCategory: ServiceGroup = {
-        id: `CAT-${Date.now()}`,
-        name: categoryForm.name,
-        description: categoryForm.description,
-        icon: categoryForm.icon,
+      setLoading(true);
+      await adminApi.createServiceGroup({
+        name: categoryForm.name.trim(),
+        description: categoryForm.description.trim(),
+        icon: categoryForm.icon || undefined,
         isActive: true,
-        displayOrder: categories.length,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      setCategories([...categories, newCategory]);
+        displayOrder: groups.length,
+        categories: [],
+      });
       setCategoryForm({ name: '', description: '', icon: '' });
       setShowAddCategoryModal(false);
+      await loadData();
     } catch (error) {
       console.error('Add category error:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleEditCategory = async () => {
     if (!selectedCategory) return;
+    if (!categoryForm.name.trim() || !categoryForm.description.trim()) return;
     try {
-      // TODO: API call
-      setCategories(categories.map(c =>
-        c.id === selectedCategory.id
-          ? { ...c, name: categoryForm.name, description: categoryForm.description, icon: categoryForm.icon, updatedAt: new Date().toISOString() }
-          : c
-      ));
+      setLoading(true);
+      const updated: ServiceGroup = {
+        ...selectedCategory,
+        name: categoryForm.name.trim(),
+        description: categoryForm.description.trim(),
+        icon: categoryForm.icon || undefined,
+      };
+      await persistGroup(updated);
       setSelectedCategory(null);
       setCategoryForm({ name: '', description: '', icon: '' });
       setShowEditCategoryModal(false);
     } catch (error) {
       console.error('Edit category error:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleAddSubcategory = async () => {
+    if (!subcategoryForm.categoryId || !subcategoryForm.name.trim()) return;
     try {
-      // TODO: API call
-      if (!subcategoryForm.categoryId) return;
-      
-      const existingSubcats = allSubcategories.filter(s => s.categoryId === subcategoryForm.categoryId);
-      const newSubcategory: Subcategory = {
-        id: `SUBCAT-${Date.now()}`,
-        name: subcategoryForm.name,
-        description: subcategoryForm.description,
-        icon: subcategoryForm.icon,
-        categoryId: subcategoryForm.categoryId,
+      setLoading(true);
+      const allCats = allCategoriesFromGroups(groups);
+      const parentCat = allCats.find((c) => c.id === subcategoryForm.categoryId);
+      if (!parentCat?.groupId) return;
+      const gIdx = groups.findIndex((g) => g.id === parentCat.groupId);
+      if (gIdx < 0) return;
+      const g = groups[gIdx];
+      const cats = [...(g.categories || [])];
+      const ci = cats.findIndex((c) => c.id === subcategoryForm.categoryId);
+      if (ci < 0) return;
+      const cat = cats[ci];
+      const subs = [...(cat.subcategories || [])];
+      subs.push({
+        id: `sub${Date.now()}`,
+        name: subcategoryForm.name.trim(),
+        description: subcategoryForm.description?.trim() || '',
+        categoryId: cat.id,
+        icon: subcategoryForm.icon || undefined,
         isActive: true,
-        displayOrder: existingSubcats.length,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      setAllSubcategories([...allSubcategories, newSubcategory]);
+        displayOrder: subs.length,
+      });
+      cats[ci] = { ...cat, subcategories: subs };
+      const nextGroup: ServiceGroup = { ...g, categories: cats };
+      await persistGroup(nextGroup);
       setSubcategoryForm({ name: '', description: '', icon: '', categoryId: '', groupId: '' });
       setShowAddSubcategoryModal(false);
     } catch (error) {
       console.error('Add subcategory error:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleEditSubcategory = async () => {
     if (!selectedSubcategory) return;
+    if (!subcategoryForm.name.trim()) return;
     try {
-      // TODO: API call
-      setAllSubcategories(allSubcategories.map(s => {
-        if (s.id === selectedSubcategory.id) {
-          return {
-            ...s,
-            name: subcategoryForm.name,
-            description: subcategoryForm.description,
-            icon: subcategoryForm.icon,
-            updatedAt: new Date().toISOString(),
-          };
-        }
-        return s;
-      }));
+      setLoading(true);
+      const allCats = allCategoriesFromGroups(groups);
+      const parentCat = allCats.find((c) => c.id === selectedSubcategory.categoryId);
+      if (!parentCat?.groupId) return;
+      const gIdx = groups.findIndex((gr) => gr.id === parentCat.groupId);
+      if (gIdx < 0) return;
+      const g = groups[gIdx];
+      const cats = (g.categories || []).map((c) => {
+        if (c.id !== selectedSubcategory.categoryId) return c;
+        return {
+          ...c,
+          subcategories: (c.subcategories || []).map((s) =>
+            s.id === selectedSubcategory.id
+              ? {
+                  ...s,
+                  name: subcategoryForm.name.trim(),
+                  description: subcategoryForm.description?.trim() || '',
+                  icon: subcategoryForm.icon || undefined,
+                }
+              : s
+          ),
+        };
+      });
+      await persistGroup({ ...g, categories: cats });
       setSelectedSubcategory(null);
       setSubcategoryForm({ name: '', description: '', icon: '', categoryId: '', groupId: '' });
       setShowEditSubcategoryModal(false);
     } catch (error) {
       console.error('Edit subcategory error:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleToggleActive = (id: string, type: 'category' | 'subcategory') => {
-    try {
-      if (type === 'category') {
-        const category = categories.find(c => c.id === id);
-        if (!category) return;
-        
-        const newIsActive = !category.isActive;
-        
-        // Update the category
-        setCategories(categories.map(c =>
-          c.id === id
-            ? { ...c, isActive: newIsActive, updatedAt: new Date().toISOString() }
-            : c
-        ));
-        
-        // If disabling the category, disable all its subcategories
-        if (!newIsActive) {
-          // Get all category IDs that belong to this group
-          const groupCategoryIds = allCategories
-            .filter(cat => cat.groupId === id)
-            .map(cat => cat.id);
-          
-          // Disable all subcategories that belong to these categories
-          setAllSubcategories(allSubcategories.map(s => {
-            if (groupCategoryIds.includes(s.categoryId)) {
-              return { ...s, isActive: false, updatedAt: new Date().toISOString() };
-            }
-            return s;
-          }));
-        }
+  const handleToggleActive = async (id: string, type: 'category' | 'subcategory') => {
+    if (type === 'category') {
+      const idx = groups.findIndex((gr) => gr.id === id);
+      if (idx < 0) return;
+      const g = groups[idx];
+      const wasActive = g.isActive !== false;
+      const nextActive = !wasActive;
+      let next: ServiceGroup;
+      if (!nextActive) {
+        next = {
+          ...g,
+          isActive: false,
+          categories: (g.categories || []).map((c) => ({
+            ...c,
+            subcategories: (c.subcategories || []).map((s) => ({ ...s, isActive: false })),
+          })),
+        };
       } else {
-        // For subcategories, check if parent category is active
-        const subcategory = allSubcategories.find(s => s.id === id);
-        if (!subcategory) return;
-        
-        const parentCategory = allCategories.find(c => c.id === subcategory.categoryId);
-        if (!parentCategory) return;
-        
-        const parentGroup = categories.find(g => g.id === parentCategory.groupId);
-        
-        // If parent category is disabled, don't allow enabling subcategory
-        if (parentGroup && !parentGroup.isActive && !subcategory.isActive) {
-          return; // Don't allow enabling if parent is disabled
-        }
-        
-        setAllSubcategories(allSubcategories.map(s =>
-          s.id === id
-            ? { ...s, isActive: !s.isActive, updatedAt: new Date().toISOString() }
-            : s
-        ));
+        next = { ...g, isActive: true };
       }
-    } catch (error) {
-      console.error('Toggle active error:', error);
+      setGroups(groups.map((x, i) => (i === idx ? next : x)));
+      await persistGroup(next);
+      return;
     }
+
+    const flatSubs = groups.flatMap((gr) => flattenSubcategoriesForGroup(gr));
+    const subFound = flatSubs.find((s) => s.id === id);
+    if (!subFound) return;
+    const allCats = allCategoriesFromGroups(groups);
+    const parentCat = allCats.find((c) => c.id === subFound.categoryId);
+    if (!parentCat?.groupId) return;
+    const parentGroup = groups.find((gr) => gr.id === parentCat.groupId);
+    if (!parentGroup) return;
+    const nextSubOn = !(subFound.isActive !== false);
+    if (!parentGroup.isActive && nextSubOn) return;
+
+    const gIdx = groups.findIndex((gr) => gr.id === parentCat.groupId);
+    if (gIdx < 0) return;
+    const g = groups[gIdx];
+    const cats = (g.categories || []).map((c) => ({
+      ...c,
+      subcategories: (c.subcategories || []).map((s) =>
+        s.id === id ? { ...s, isActive: nextSubOn } : s
+      ),
+    }));
+    const nextGroup: ServiceGroup = { ...g, categories: cats };
+    setGroups(groups.map((x, i) => (i === gIdx ? nextGroup : x)));
+    await persistGroup(nextGroup);
   };
 
   const openEditCategory = (category: ServiceGroup) => {
@@ -312,12 +426,12 @@ const RegularServicesTab: React.FC = () => {
         </Button>
       </div>
 
-      {categories.length === 0 ? (
+      {groups.length === 0 ? (
         <EmptyState title="لا توجد فئات خدمات عادية" />
       ) : (
         <div className="space-y-6">
-          {categories.map((category) => {
-            const categorySubcategories = getSubcategoriesForCategory(category.id);
+          {groups.map((category) => {
+            const categorySubcategories = getSubcategoriesForGroup(category.id);
             return (
               <Card key={category.id} title="">
                 <div className="space-y-4">
@@ -339,8 +453,8 @@ const RegularServicesTab: React.FC = () => {
                     <div className="flex items-center gap-4">
                       <ToggleSwitch
                         checked={category.isActive ?? true}
-                        onChange={(checked) => {
-                          handleToggleActive(category.id, 'category');
+                        onChange={() => {
+                          void handleToggleActive(category.id, 'category');
                         }}
                       />
                       <div className="flex gap-2">
@@ -355,9 +469,7 @@ const RegularServicesTab: React.FC = () => {
                           variant="primary"
                           size="sm"
                           onClick={() => {
-                            // Set the groupId to filter categories in the modal
-                            setSubcategoryForm({ name: '', description: '', icon: '', categoryId: '', groupId: category.id });
-                            setShowAddSubcategoryModal(true);
+                            void openAddSubcategoryForGroup(category);
                           }}
                         >
                           إضافة فئة فرعية
@@ -390,8 +502,8 @@ const RegularServicesTab: React.FC = () => {
                           <div className="flex items-center gap-4">
                             <ToggleSwitch
                               checked={subcategory.isActive ?? true}
-                              onChange={(checked) => {
-                                handleToggleActive(subcategory.id, 'subcategory');
+                              onChange={() => {
+                                void handleToggleActive(subcategory.id, 'subcategory');
                               }}
                               disabled={!category.isActive}
                             />
@@ -556,11 +668,11 @@ const RegularServicesTab: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">اختر الفئة</option>
-              {allCategories
-                .filter(cat => !subcategoryForm.groupId || cat.groupId === subcategoryForm.groupId)
-                .map(cat => (
-                  <option key={cat.id} value={cat.id}>{cat.name}</option>
-                ))}
+              {mainCategorySelectOptions.map((cat) => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.name}
+                </option>
+              ))}
             </select>
           </div>
           <div>
@@ -599,7 +711,7 @@ const RegularServicesTab: React.FC = () => {
           <div className="flex gap-2 justify-end pt-4 border-t">
             <Button variant="secondary" onClick={() => {
               setShowAddSubcategoryModal(false);
-              setSubcategoryForm({ name: '', description: '', icon: '', categoryId: '' });
+              setSubcategoryForm({ name: '', description: '', icon: '', categoryId: '', groupId: '' });
             }}>
               إلغاء
             </Button>
@@ -660,7 +772,7 @@ const RegularServicesTab: React.FC = () => {
             <Button variant="secondary" onClick={() => {
               setShowEditSubcategoryModal(false);
               setSelectedSubcategory(null);
-              setSubcategoryForm({ name: '', description: '', icon: '', categoryId: '' });
+              setSubcategoryForm({ name: '', description: '', icon: '', categoryId: '', groupId: '' });
             }}>
               إلغاء
             </Button>
@@ -715,61 +827,64 @@ const QuickServicesTab: React.FC = () => {
   };
 
   const handleAddCategory = async () => {
+    if (!categoryForm.title.trim()) return;
+    const price = parseFloat(categoryForm.price);
+    if (!Number.isFinite(price) || price < 0) return;
     try {
-      // TODO: API call
-      const newCategory: QuickService = {
-        id: `QS-${Date.now()}`,
-        title: categoryForm.title,
-        description: categoryForm.description,
-        icon: categoryForm.icon,
-        price: parseFloat(categoryForm.price) || 0,
+      setLoading(true);
+      await adminApi.createQuickService({
+        title: categoryForm.title.trim(),
+        description: categoryForm.description?.trim() || '',
+        icon: categoryForm.icon || undefined,
+        price,
         duration: '',
         isActive: true,
         displayOrder: categories.length,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      setCategories([...categories, newCategory]);
+      });
       setCategoryForm({ title: '', description: '', icon: '', price: '' });
       setShowAddCategoryModal(false);
+      await loadData();
     } catch (error) {
       console.error('Add category error:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleEditCategory = async () => {
     if (!selectedCategory) return;
+    if (!categoryForm.title.trim()) return;
+    const price = parseFloat(categoryForm.price);
+    if (!Number.isFinite(price) || price < 0) return;
     try {
-      // TODO: API call
-      setCategories(categories.map(c =>
-        c.id === selectedCategory.id
-          ? {
-              ...c,
-              title: categoryForm.title,
-              description: categoryForm.description,
-              icon: categoryForm.icon,
-              price: parseFloat(categoryForm.price) || 0,
-              updatedAt: new Date().toISOString(),
-            }
-          : c
-      ));
+      setLoading(true);
+      await adminApi.patchQuickService(selectedCategory.id, {
+        title: categoryForm.title.trim(),
+        description: categoryForm.description?.trim() || '',
+        icon: categoryForm.icon || undefined,
+        price,
+      });
       setSelectedCategory(null);
       setCategoryForm({ title: '', description: '', icon: '', price: '' });
       setShowEditCategoryModal(false);
+      await loadData();
     } catch (error) {
       console.error('Edit category error:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleToggleActive = (id: string) => {
+  const handleToggleActive = async (id: string) => {
+    const row = categories.find((c) => c.id === id);
+    if (!row) return;
+    const next = !(row.isActive !== false);
     try {
-      setCategories(categories.map(c =>
-        c.id === id
-          ? { ...c, isActive: !c.isActive, updatedAt: new Date().toISOString() }
-          : c
-      ));
+      setCategories(categories.map((c) => (c.id === id ? { ...c, isActive: next } : c)));
+      await adminApi.patchQuickService(id, { isActive: next });
     } catch (error) {
       console.error('Toggle active error:', error);
+      await loadData();
     }
   };
 
@@ -819,8 +934,8 @@ const QuickServicesTab: React.FC = () => {
                   )}
                   <ToggleSwitch
                     checked={category.isActive ?? true}
-                    onChange={(checked) => {
-                      handleToggleActive(category.id);
+                    onChange={() => {
+                      void handleToggleActive(category.id);
                     }}
                   />
                 </div>

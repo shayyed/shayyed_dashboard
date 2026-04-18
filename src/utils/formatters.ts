@@ -1,3 +1,9 @@
+/** Shown in lists and PDF-style refs; routes still use `id` (Mongo ObjectId string from API). */
+export function getInvoiceDisplayNumber(invoice: { invoiceNumber?: string; id: string }): string {
+  const n = invoice.invoiceNumber?.trim();
+  return n || invoice.id;
+}
+
 export const formatSar = (amount: number): string => {
   return `${amount.toLocaleString('en-US')} ر.س`;
 };

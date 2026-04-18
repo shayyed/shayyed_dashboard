@@ -5,124 +5,143 @@ import { Button } from '../components/Button';
 import { SearchableSelect } from '../components/SearchableSelect';
 import { Table } from '../components/Table';
 import { ArrowRight } from 'lucide-react';
-import { mockUsers } from '../mock/data';
-import { UserRole } from '../types';
+import { adminApi } from '../services/api';
+import type { ChatPairBlock } from '../types';
 import { formatDateTime } from '../utils/formatters';
 
-const CHAT_BANS_KEY = 'shayyed_chat_bans';
-
-export interface ChatBan {
-  id: string;
-  clientId: string;
-  contractorId: string;
-  bannedAt: string;
-}
-
 export const ChatBansPage: React.FC = () => {
-  const [bans, setBans] = useState<ChatBan[]>([]);
+  const [bans, setBans] = useState<ChatPairBlock[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [listError, setListError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [selectedClientId, setSelectedClientId] = useState('');
   const [selectedContractorId, setSelectedContractorId] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [clientRows, setClientRows] = useState<{ id: string; name: string; phone: string }[]>([]);
+  const [contractorRows, setContractorRows] = useState<{ id: string; name: string; phone: string }[]>([]);
 
-  const clientOptions = useMemo(() => {
-    return mockUsers
-      .filter((u) => u.role === UserRole.CLIENT)
-      .map((c) => ({ label: `${c.name} - ${c.phone}`, value: c.id }));
-  }, []);
-
-  const contractorOptions = useMemo(() => {
-    return mockUsers
-      .filter((u) => u.role === UserRole.CONTRACTOR)
-      .map((c) => ({ label: `${c.name} - ${c.phone}`, value: c.id }));
-  }, []);
+  const loadBlocks = async () => {
+    try {
+      setListError(null);
+      const items = await adminApi.listChatBlocks();
+      setBans(items);
+    } catch (e) {
+      setListError(e instanceof Error ? e.message : 'تعذر تحميل القائمة');
+      setBans([]);
+    }
+  };
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(CHAT_BANS_KEY);
-      if (stored) {
-        setBans(JSON.parse(stored));
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        const [c, co] = await Promise.all([
+          adminApi.listAppUserPickList('CLIENT'),
+          adminApi.listAppUserPickList('CONTRACTOR'),
+        ]);
+        if (!cancelled) {
+          setClientRows(c);
+          setContractorRows(co);
+        }
+        await loadBlocks();
+      } catch (e) {
+        if (!cancelled) setListError(e instanceof Error ? e.message : 'تعذر التحميل');
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-    } catch {
-      // ignore
-    }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const saveBans = (next: ChatBan[]) => {
-    setBans(next);
-    localStorage.setItem(CHAT_BANS_KEY, JSON.stringify(next));
-  };
+  const clientOptions = useMemo(
+    () => clientRows.map((c) => ({ label: `${c.name} — ${c.phone}`, value: c.id })),
+    [clientRows]
+  );
 
-  const handleConfirmBan = () => {
+  const contractorOptions = useMemo(
+    () => contractorRows.map((c) => ({ label: `${c.name} — ${c.phone}`, value: c.id })),
+    [contractorRows]
+  );
+
+  const handleConfirmBan = async () => {
     if (!selectedClientId || !selectedContractorId) return;
-    const exists = bans.some(
-      (b) =>
-        (b.clientId === selectedClientId && b.contractorId === selectedContractorId) ||
-        (b.clientId === selectedContractorId && b.contractorId === selectedClientId)
-    );
-    if (exists) return;
-    const newBan: ChatBan = {
-      id: `ban-${Date.now()}`,
-      clientId: selectedClientId,
-      contractorId: selectedContractorId,
-      bannedAt: new Date().toISOString(),
-    };
-    saveBans([...bans, newBan]);
-    setSelectedClientId('');
-    setSelectedContractorId('');
+    setActionError(null);
+    setSubmitting(true);
+    try {
+      await adminApi.createChatBlock(selectedClientId, selectedContractorId);
+      setSelectedClientId('');
+      setSelectedContractorId('');
+      await loadBlocks();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'تعذر إنشاء الحظر');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleRemoveBan = (id: string) => {
-    saveBans(bans.filter((b) => b.id !== id));
+  const handleRemoveBan = async (id: string) => {
+    setActionError(null);
+    try {
+      await adminApi.deleteChatBlock(id);
+      await loadBlocks();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'تعذر إلغاء الحظر');
+    }
   };
 
   const columns = [
     {
       key: 'client',
       label: 'العميل',
-      render: (ban: ChatBan) => {
-        const client = mockUsers.find((u) => u.id === ban.clientId);
-        return client ? (
-          <Link to={`/users/clients/${client.id}`} className="text-blue-600 hover:underline">
-            {client.name}
+      render: (ban: ChatPairBlock) => {
+        const label = ban.clientName?.trim();
+        return label ? (
+          <Link to={`/users/clients/${ban.clientId}`} className="text-blue-600 hover:underline">
+            {label}
           </Link>
         ) : (
-          <span className="text-gray-400">-</span>
+          <Link to={`/users/clients/${ban.clientId}`} className="text-blue-600 hover:underline">
+            {ban.clientId}
+          </Link>
         );
       },
     },
     {
       key: 'contractor',
       label: 'المقاول',
-      render: (ban: ChatBan) => {
-        const contractor = mockUsers.find((u) => u.id === ban.contractorId);
-        return contractor ? (
-          <Link
-            to={`/users/contractors/${contractor.id}`}
-            className="text-blue-600 hover:underline"
-          >
-            {contractor.name}
+      render: (ban: ChatPairBlock) => {
+        const label = ban.contractorName?.trim();
+        return label ? (
+          <Link to={`/users/contractors/${ban.contractorId}`} className="text-blue-600 hover:underline">
+            {label}
           </Link>
         ) : (
-          <span className="text-gray-400">-</span>
+          <Link to={`/users/contractors/${ban.contractorId}`} className="text-blue-600 hover:underline">
+            {ban.contractorId}
+          </Link>
         );
       },
     },
     {
-      key: 'bannedAt',
+      key: 'createdAt',
       label: 'تاريخ الحظر',
-      render: (ban: ChatBan) => formatDateTime(ban.bannedAt),
+      render: (ban: ChatPairBlock) => formatDateTime(ban.createdAt),
     },
     {
       key: 'actions',
       label: 'إجراءات',
-      render: (ban: ChatBan) => (
-        <Button variant="secondary" onClick={() => handleRemoveBan(ban.id)}>
+      render: (ban: ChatPairBlock) => (
+        <Button variant="secondary" onClick={() => void handleRemoveBan(ban.id)}>
           إلغاء الحظر
         </Button>
       ),
     },
   ];
 
-  const canConfirm = selectedClientId && selectedContractorId;
+  const canConfirm = selectedClientId && selectedContractorId && !submitting;
 
   return (
     <div className="space-y-6">
@@ -132,6 +151,12 @@ export const ChatBansPage: React.FC = () => {
         </Link>
         <h1 className="text-2xl font-semibold text-[#111111]">حظر بعض المحادثات</h1>
       </div>
+
+      {(listError || actionError) && (
+        <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+          {actionError || listError}
+        </div>
+      )}
 
       <Card title="إضافة حظر جديد">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -153,17 +178,15 @@ export const ChatBansPage: React.FC = () => {
         <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
           بعد تأكيد هذا الحظر، لن يتمكن العميل والمقاول من التواصل عبر المحادثة مع بعضهما البعض، ويمكن للمسؤول إلغاء هذا الحظر لاحقاً.
         </div>
-        <Button
-          variant="primary"
-          onClick={handleConfirmBan}
-          disabled={!canConfirm}
-        >
-          تأكيد الحظر
+        <Button variant="primary" onClick={() => void handleConfirmBan()} disabled={!canConfirm}>
+          {submitting ? 'جاري الحفظ…' : 'تأكيد الحظر'}
         </Button>
       </Card>
 
       <Card title="قائمة المحظورين">
-        {bans.length === 0 ? (
+        {loading ? (
+          <p className="text-[#666666] text-center py-8">جاري التحميل…</p>
+        ) : bans.length === 0 ? (
           <p className="text-[#666666] text-center py-8">لا توجد محادثات محظورة حالياً.</p>
         ) : (
           <Table columns={columns} data={bans} loading={false} />

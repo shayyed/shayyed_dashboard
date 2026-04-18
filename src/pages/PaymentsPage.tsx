@@ -11,8 +11,11 @@ import { EmptyState } from '../components/EmptyState';
 import { adminApi } from '../services/api';
 import type { Payment } from '../types';
 import { PaymentStatus } from '../types';
-import { mockUsers, mockInvoices, mockProjects, mockContracts, mockQuotations } from '../mock/data';
-import { formatDate, formatCurrency, formatDateTime } from '../utils/formatters';
+import { formatDate, formatCurrency, getInvoiceDisplayNumber } from '../utils/formatters';
+
+function paymentDisplayRef(p: Payment): string {
+  return (p.referenceNumber && p.referenceNumber.trim()) || p.id;
+}
 
 const TABS = [
   { label: 'الكل', value: 'all' },
@@ -59,38 +62,29 @@ export const PaymentsPage: React.FC = () => {
   // Generate unique options for searchable selects
   const uniqueInvoices = useMemo(() => {
     const invoices = payments
-      .map(p => {
-        const invoice = mockInvoices.find(i => i.id === p.invoiceId);
-        return invoice ? { label: `${invoice.id} - ${invoice.title}`, value: invoice.id } : null;
-      })
-      .filter((inv): inv is { label: string; value: string } => inv !== null);
-    
+      .filter(p => p.invoiceId)
+      .map(p => ({
+        label: `${getInvoiceDisplayNumber({ id: p.invoiceId, invoiceNumber: p.invoiceNumber })}${
+          p.invoiceTitle ? ` — ${p.invoiceTitle}` : ''
+        }`,
+        value: p.invoiceId,
+      }));
     const unique = Array.from(new Map(invoices.map(inv => [inv.value, inv])).values());
     return unique.sort((a, b) => a.label.localeCompare(b.label));
   }, [payments]);
 
   const uniqueClients = useMemo(() => {
     const clients = payments
-      .map(p => {
-        const invoice = mockInvoices.find(i => i.id === p.invoiceId);
-        const client = invoice ? mockUsers.find(u => u.id === invoice.clientId) : null;
-        return client ? { label: client.name, value: client.id } : null;
-      })
-      .filter((c): c is { label: string; value: string } => c !== null);
-    
+      .filter(p => p.clientId && (p.clientName || '').trim())
+      .map(p => ({ label: p.clientName!.trim(), value: p.clientId! }));
     const unique = Array.from(new Map(clients.map(c => [c.value, c])).values());
     return unique.sort((a, b) => a.label.localeCompare(b.label));
   }, [payments]);
 
   const uniqueContractors = useMemo(() => {
     const contractors = payments
-      .map(p => {
-        const invoice = mockInvoices.find(i => i.id === p.invoiceId);
-        const contractor = invoice ? mockUsers.find(u => u.id === invoice.contractorId) : null;
-        return contractor ? { label: contractor.name, value: contractor.id } : null;
-      })
-      .filter((c): c is { label: string; value: string } => c !== null);
-    
+      .filter(p => p.contractorId && (p.contractorName || '').trim())
+      .map(p => ({ label: p.contractorName!.trim(), value: p.contractorId! }));
     const unique = Array.from(new Map(contractors.map(c => [c.value, c])).values());
     return unique.sort((a, b) => a.label.localeCompare(b.label));
   }, [payments]);
@@ -107,17 +101,21 @@ export const PaymentsPage: React.FC = () => {
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(p => {
-        const invoice = mockInvoices.find(i => i.id === p.invoiceId);
-        const client = invoice ? mockUsers.find(u => u.id === invoice.clientId) : null;
-        const contractor = invoice ? mockUsers.find(u => u.id === invoice.contractorId) : null;
+        const invNo = getInvoiceDisplayNumber({
+          id: p.invoiceId,
+          invoiceNumber: p.invoiceNumber,
+        }).toLowerCase();
         return (
           p.id.toLowerCase().includes(query) ||
           (p.referenceNumber && p.referenceNumber.toLowerCase().includes(query)) ||
           (p.noonPaymentId && p.noonPaymentId.toLowerCase().includes(query)) ||
           (p.noonReference && p.noonReference.toLowerCase().includes(query)) ||
-          (invoice && invoice.id.toLowerCase().includes(query)) ||
-          (client && client.name.toLowerCase().includes(query)) ||
-          (contractor && contractor.name.toLowerCase().includes(query))
+          (p.invoiceId && p.invoiceId.toLowerCase().includes(query)) ||
+          invNo.includes(query) ||
+          (p.invoiceTitle && p.invoiceTitle.toLowerCase().includes(query)) ||
+          (p.clientName && p.clientName.toLowerCase().includes(query)) ||
+          (p.contractorName && p.contractorName.toLowerCase().includes(query)) ||
+          (p.milestoneLabel && p.milestoneLabel.toLowerCase().includes(query))
         );
       });
     }
@@ -134,18 +132,12 @@ export const PaymentsPage: React.FC = () => {
 
     // Client filter
     if (filters.client) {
-      filtered = filtered.filter(p => {
-        const invoice = mockInvoices.find(i => i.id === p.invoiceId);
-        return invoice && invoice.clientId === filters.client;
-      });
+      filtered = filtered.filter(p => p.clientId === filters.client);
     }
 
     // Contractor filter
     if (filters.contractor) {
-      filtered = filtered.filter(p => {
-        const invoice = mockInvoices.find(i => i.id === p.invoiceId);
-        return invoice && invoice.contractorId === filters.contractor;
-      });
+      filtered = filtered.filter(p => p.contractorId === filters.contractor);
     }
 
     // Amount range filter
@@ -192,102 +184,61 @@ export const PaymentsPage: React.FC = () => {
       label: 'رقم المرجع',
       render: (payment: Payment) => (
         <Link to={`/payments/${payment.id}`} className="text-blue-600 hover:underline">
-          {payment.referenceNumber || payment.id}
+          {paymentDisplayRef(payment)}
         </Link>
       ),
     },
     {
       key: 'invoice',
       label: 'الفاتورة',
-      render: (payment: Payment) => {
-        const invoice = mockInvoices.find(i => i.id === payment.invoiceId);
-        return invoice ? (
-          <Link to={`/invoices/${invoice.id}`} className="text-blue-600 hover:underline">
-            {invoice.id}
+      render: (payment: Payment) =>
+        payment.invoiceId ? (
+          <Link to={`/invoices/${payment.invoiceId}`} className="text-blue-600 hover:underline">
+            {getInvoiceDisplayNumber({
+              id: payment.invoiceId,
+              invoiceNumber: payment.invoiceNumber,
+            })}
           </Link>
         ) : (
           <span className="text-gray-400">-</span>
-        );
-      },
+        ),
     },
     {
       key: 'milestone',
       label: 'الدفعة المرتبطة',
-      render: (payment: Payment) => {
-        const invoice = mockInvoices.find(i => i.id === payment.invoiceId);
-        if (!invoice) return <span className="text-gray-400">-</span>;
-        
-        // Check if it's a quick service order (projectId starts with QSO-)
-        const isQuickService = invoice.projectId && invoice.projectId.startsWith('QSO-');
-        
-        if (isQuickService) {
-          // For quick service orders, find the quotation and its installments
-          const quotation = mockQuotations.find(q => q.requestId === invoice.projectId && q.status === 'ACCEPTED');
-          if (quotation && quotation.installments && quotation.installments.length > 0) {
-            // Find the installment that matches the invoice amount
-            const relatedInstallment = quotation.installments.find(
-              inst => Math.abs(inst.amount - invoice.totalAmount) < 1 || Math.abs(inst.amount - invoice.amount) < 1
-            ) || quotation.installments[0]; // Fallback to first installment
-            
-            const installmentIndex = quotation.installments.findIndex(inst => inst.id === relatedInstallment.id) + 1;
-            return (
-              <span className="text-blue-600">
-                الدفعة {installmentIndex} - {relatedInstallment.title}
-              </span>
-            );
-          }
-          return <span className="text-gray-400">-</span>;
-        }
-        
-        // For regular projects, find milestone from contract
-        if (!invoice.milestoneId) return <span className="text-gray-400">-</span>;
-        
-        const project = mockProjects.find(p => p.id === invoice.projectId);
-        if (!project) return <span className="text-gray-400">-</span>;
-        
-        const contract = mockContracts.find(c => c.id === project.contractId);
-        if (!contract) return <span className="text-gray-400">-</span>;
-        
-        const milestone = contract.milestones.find(m => m.id === invoice.milestoneId);
-        if (!milestone) return <span className="text-gray-400">-</span>;
-        
-        const milestoneIndex = contract.milestones.findIndex(m => m.id === milestone.id) + 1;
-        return (
-          <Link to={`/milestones/${milestone.id}`} className="text-blue-600 hover:underline">
-            الدفعة {milestoneIndex} - {milestone.name}
-          </Link>
-        );
-      },
+      render: (payment: Payment) =>
+        payment.milestoneLabel && payment.milestoneLabel.trim() ? (
+          <span className="text-[#111111]">{payment.milestoneLabel}</span>
+        ) : (
+          <span className="text-gray-400">-</span>
+        ),
     },
     {
       key: 'client',
       label: 'العميل',
-      render: (payment: Payment) => {
-        const invoice = mockInvoices.find(i => i.id === payment.invoiceId);
-        const client = invoice ? mockUsers.find(u => u.id === invoice.clientId) : null;
-        return client ? (
-          <Link to={`/users/clients/${client.id}`} className="text-blue-600 hover:underline">
-            {client.name}
+      render: (payment: Payment) =>
+        payment.clientId && (payment.clientName || '').trim() ? (
+          <Link to={`/users/clients/${payment.clientId}`} className="text-blue-600 hover:underline">
+            {payment.clientName}
           </Link>
         ) : (
           <span className="text-gray-400">-</span>
-        );
-      },
+        ),
     },
     {
       key: 'contractor',
       label: 'المقاول',
-      render: (payment: Payment) => {
-        const invoice = mockInvoices.find(i => i.id === payment.invoiceId);
-        const contractor = invoice ? mockUsers.find(u => u.id === invoice.contractorId) : null;
-        return contractor ? (
-          <Link to={`/users/contractors/${contractor.id}`} className="text-blue-600 hover:underline">
-            {contractor.name}
+      render: (payment: Payment) =>
+        payment.contractorId && (payment.contractorName || '').trim() ? (
+          <Link
+            to={`/users/contractors/${payment.contractorId}`}
+            className="text-blue-600 hover:underline"
+          >
+            {payment.contractorName}
           </Link>
         ) : (
           <span className="text-gray-400">-</span>
-        );
-      },
+        ),
     },
     {
       key: 'amount',

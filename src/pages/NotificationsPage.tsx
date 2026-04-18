@@ -10,27 +10,25 @@ import { Input } from '../components/Input';
 import { adminApi } from '../services/api';
 import type { Notification } from '../types';
 import { UserRole } from '../types';
-import { mockUsers } from '../mock/data';
-import { formatDate, formatDateTime } from '../utils/formatters';
+import { formatDateTime } from '../utils/formatters';
 
-
+const emptySendForm = {
+  title: '',
+  body: '',
+  type: 'general' as 'offer' | 'payment' | 'complaint' | 'general',
+  targetType: 'all' as 'all' | 'clients' | 'contractors',
+};
 
 export const NotificationsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSendModal, setShowSendModal] = useState(false);
-
-  // Send notification form state
-  const [sendForm, setSendForm] = useState({
-    title: '',
-    body: '',
-    type: 'general' as 'offer' | 'payment' | 'complaint' | 'general',
-    targetType: 'all' as 'all' | 'clients' | 'contractors',
-  });
+  const [sendLoading, setSendLoading] = useState(false);
+  const [sendForm, setSendForm] = useState(emptySendForm);
 
   useEffect(() => {
-    loadNotifications();
+    void loadNotifications();
   }, []);
 
   const loadNotifications = async () => {
@@ -47,73 +45,48 @@ export const NotificationsPage: React.FC = () => {
 
   const filteredNotifications = useMemo(() => {
     let filtered = notifications;
-
-    // Search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(notif => {
-        return (
-          notif.title.toLowerCase().includes(query) ||
-          notif.body.toLowerCase().includes(query)
-        );
-      });
+      filtered = filtered.filter(
+        (notif) =>
+          notif.title.toLowerCase().includes(query) || notif.body.toLowerCase().includes(query)
+      );
     }
-
     return filtered;
   }, [notifications, searchQuery]);
 
   const handleExport = () => {
-    // TODO: Implement export functionality
     console.log('Export notifications:', filteredNotifications);
   };
 
-  // Helper function to get target users based on notification
   const getTargetUsers = (notif: Notification): 'العملاء' | 'المقاولون' | 'الكل' => {
-    // Check if there are other notifications with the same title/body sent to different user types
-    const sameNotifications = notifications.filter(n => 
-      n.title === notif.title && 
-      n.body === notif.body && 
-      n.id !== notif.id
-    );
-    
-    if (sameNotifications.length > 0) {
-      const userRoles = new Set<string>();
-      sameNotifications.forEach(n => {
-        const user = mockUsers.find(u => u.id === n.userId);
-        if (user) userRoles.add(user.role);
-      });
-      const currentUser = mockUsers.find(u => u.id === notif.userId);
-      if (currentUser) userRoles.add(currentUser.role);
-      
-      if (userRoles.has(UserRole.CLIENT) && userRoles.has(UserRole.CONTRACTOR)) {
-        return 'الكل';
-      }
-    }
-    
-    const user = mockUsers.find(u => u.id === notif.userId);
-    if (!user) return 'الكل';
-    
-    return user.role === UserRole.CLIENT ? 'العملاء' : 'المقاولون';
+    const role = notif.userRole?.toUpperCase();
+    if (role === UserRole.CLIENT) return 'العملاء';
+    if (role === UserRole.CONTRACTOR) return 'المقاولون';
+    return 'الكل';
   };
 
   const handleSendNotification = async () => {
+    if (!sendForm.title.trim() || !sendForm.body.trim()) return;
     try {
-      // TODO: API call
-      console.log('Send notification:', sendForm);
-      setShowSendModal(false);
-      setSendForm({
-        title: '',
-        body: '',
-        type: 'general',
-        targetType: 'all',
+      setSendLoading(true);
+      const { sentCount } = await adminApi.broadcastNotification({
+        title: sendForm.title.trim(),
+        body: sendForm.body.trim(),
+        type: sendForm.type,
+        targetType: sendForm.targetType,
       });
-      loadNotifications();
+      setShowSendModal(false);
+      setSendForm({ ...emptySendForm });
+      await loadNotifications();
+      window.alert(`تم إرسال الإشعار إلى ${sentCount} مستخدم`);
     } catch (error) {
       console.error('Send notification error:', error);
+      window.alert(error instanceof Error ? error.message : 'تعذر إرسال الإشعار');
+    } finally {
+      setSendLoading(false);
     }
   };
-
-
 
   const columns = [
     {
@@ -138,12 +111,9 @@ export const NotificationsPage: React.FC = () => {
     {
       key: 'targetUsers',
       label: 'المستخدمون المستهدفون',
-      render: (notif: Notification) => {
-        const targetUsers = getTargetUsers(notif);
-        return (
-          <span className="text-sm text-gray-600">{targetUsers}</span>
-        );
-      },
+      render: (notif: Notification) => (
+        <span className="text-sm text-gray-600">{getTargetUsers(notif)}</span>
+      ),
     },
     {
       key: 'createdAt',
@@ -173,6 +143,11 @@ export const NotificationsPage: React.FC = () => {
         </div>
       </div>
 
+      <p className="text-sm text-gray-600">
+        تعرض هذه الصفحة إشعارات الإدارة اليدوية/البعيدة فقط (لا تظهر إشعارات النظام التلقائية). تُسجَّل في
+        التطبيق وتُرسل كإشعار فوري عند توفر رمز الجهاز.
+      </p>
+
       <SearchBar
         value={searchQuery}
         onChange={setSearchQuery}
@@ -193,18 +168,11 @@ export const NotificationsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Send Notification Modal */}
       <Modal
         isOpen={showSendModal}
         onClose={() => {
           setShowSendModal(false);
-          setSendForm({
-            title: '',
-            body: '',
-            type: 'general',
-            targetType: 'all',
-            specificUsers: [],
-          });
+          setSendForm({ ...emptySendForm });
         }}
         title="إرسال إشعار جديد"
       >
@@ -216,7 +184,7 @@ export const NotificationsPage: React.FC = () => {
             <Input
               type="text"
               value={sendForm.title}
-              onChange={(e) => setSendForm({ ...sendForm, title: e.target.value })}
+              onChange={(value) => setSendForm({ ...sendForm, title: value })}
               placeholder="عنوان الإشعار"
               className="w-full"
             />
@@ -274,29 +242,22 @@ export const NotificationsPage: React.FC = () => {
             </select>
           </div>
 
-
           <div className="flex gap-2 justify-end pt-4">
             <Button
-              variant="primary"
+              variant="secondary"
               onClick={() => {
                 setShowSendModal(false);
-                setSendForm({
-                  title: '',
-                  body: '',
-                  type: 'general',
-                  targetType: 'all',
-                  specificUsers: [],
-                });
+                setSendForm({ ...emptySendForm });
               }}
             >
               إلغاء
             </Button>
             <Button
               variant="primary"
-              onClick={handleSendNotification}
-              disabled={!sendForm.title || !sendForm.body}
+              onClick={() => void handleSendNotification()}
+              disabled={!sendForm.title.trim() || !sendForm.body.trim() || sendLoading}
             >
-              إرسال
+              {sendLoading ? 'جاري الإرسال…' : 'إرسال'}
             </Button>
           </div>
         </div>

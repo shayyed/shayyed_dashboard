@@ -11,7 +11,7 @@ import { ArrowRight, Star, FileText, Image as ImageIcon } from 'lucide-react';
 import { adminApi } from '../services/api';
 import type { ServiceRequest, User, Quotation, Project, Contract } from '../types';
 import { RequestStatus, QuotationStatus } from '../types';
-import { mockUsers, mockQuotations, mockProjects, mockChatThreads, mockContracts } from '../mock/data';
+import { mockQuotations, mockProjects, mockChatThreads, mockContracts } from '../mock/data';
 import { formatDate, formatDateTime, formatSar } from '../utils/formatters';
 
 export const RegularRequestDetailsPage: React.FC = () => {
@@ -32,58 +32,60 @@ export const RegularRequestDetailsPage: React.FC = () => {
   const [cancelForm, setCancelForm] = useState({ reason: '' });
 
   useEffect(() => {
-    if (id) {
-      loadRequest();
-      loadRelatedData();
-    }
-  }, [id]);
-
-  const loadRequest = async () => {
-    try {
-      setLoading(true);
-      const data = await adminApi.getRequest(id!);
-      if (data) {
-        setRequest(data);
-      }
-    } catch (error) {
-      console.error('Load error:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadRelatedData = async () => {
     if (!id) return;
-    try {
-      const requestData = await adminApi.getRequest(id);
-      if (requestData) {
-        const clientData = mockUsers.find(u => u.id === requestData.clientId);
-        setClient(clientData || null);
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        const requestData = await adminApi.getRequest(id);
+        if (cancelled) return;
+        if (requestData) {
+          setRequest(requestData);
+          if (requestData.clientId) {
+            const profile = await adminApi.getClient(requestData.clientId);
+            if (!cancelled && profile) {
+              setClient({
+                id: profile.id,
+                phone: profile.phone,
+                name: profile.name,
+                email: profile.email,
+                role: profile.role,
+                createdAt: profile.createdAt,
+              });
+            } else if (!cancelled) setClient(null);
+          } else setClient(null);
+        } else {
+          setRequest(null);
+          setClient(null);
+        }
 
-        // Filter quotations to only show PENDING, ACCEPTED, and REJECTED statuses
-        const requestQuotations = mockQuotations.filter(q => 
-          q.requestId === id && 
-          (q.status === QuotationStatus.PENDING || 
-           q.status === QuotationStatus.ACCEPTED || 
-           q.status === QuotationStatus.REJECTED)
+        const requestQuotations = mockQuotations.filter(
+          (q) =>
+            q.requestId === id &&
+            (q.status === QuotationStatus.PENDING ||
+              q.status === QuotationStatus.ACCEPTED ||
+              q.status === QuotationStatus.REJECTED)
         );
-        setQuotations(requestQuotations);
+        if (!cancelled) setQuotations(requestQuotations);
 
-        const relatedContract = mockContracts.find(c => c.requestId === id);
-        setContract(relatedContract || null);
+        const relatedContract = mockContracts.find((c) => c.requestId === id);
+        if (!cancelled) setContract(relatedContract || null);
 
-        const relatedProject = mockProjects.find(p => p.requestId === id);
-        setProject(relatedProject || null);
+        const relatedProject = mockProjects.find((p) => p.requestId === id);
+        if (!cancelled) setProject(relatedProject || null);
 
-        const thread = mockChatThreads.find(
-          t => t.relatedType === 'request' && t.relatedId === id
-        );
-        setChatThread(thread || null);
+        const thread = mockChatThreads.find((t) => t.relatedType === 'request' && t.relatedId === id);
+        if (!cancelled) setChatThread(thread || null);
+      } catch (error) {
+        console.error('Load error:', error);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-    } catch (error) {
-      console.error('Load related data error:', error);
-    }
-  };
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
   const handleCancel = async () => {
     if (!request) return;
@@ -117,10 +119,10 @@ export const RegularRequestDetailsPage: React.FC = () => {
   const quotationsColumns = [
     {
       key: 'id',
-      label: 'معرف العرض',
+      label: 'رقم العرض',
       render: (item: any) => (
         <Link to={`/quotations/${item.id}`} className="text-blue-600 hover:underline">
-          {item.id}
+          {item.quotationNumber || item.id}
         </Link>
       ),
     },
@@ -423,6 +425,7 @@ export const RegularRequestDetailsPage: React.FC = () => {
               columns={quotationsColumns}
               data={quotations.map(quotation => ({
                 id: quotation.id,
+                quotationNumber: quotation.quotationNumber,
                 contractorId: quotation.contractorId,
                 contractorName: quotation.contractorName,
                 price: `${quotation.price.toLocaleString()} ر.س`,
@@ -441,7 +444,7 @@ export const RegularRequestDetailsPage: React.FC = () => {
             <div>
               <p className="text-sm text-gray-600 mb-1">رقم العقد</p>
               <Link to={`/contracts/${contract.id}`} className="text-blue-600 hover:underline">
-                {contract.id}
+                {contract.contractNumber || contract.id}
               </Link>
             </div>
             <div>
@@ -463,9 +466,9 @@ export const RegularRequestDetailsPage: React.FC = () => {
           {project ? (
             <div className="space-y-4">
               <div>
-                <p className="text-sm text-gray-600 mb-1">معرف المشروع</p>
+                <p className="text-sm text-gray-600 mb-1">رقم المشروع</p>
                 <Link to={`/projects/${project.id}`} className="text-blue-600 hover:underline">
-                  {project.id}
+                  {project.projectNumber || project.id}
                 </Link>
               </div>
               <div>

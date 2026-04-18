@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Table } from '../components/Table';
 import { SearchBar } from '../components/SearchBar';
@@ -8,149 +8,88 @@ import { Button } from '../components/Button';
 import { EmptyState } from '../components/EmptyState';
 import { adminApi } from '../services/api';
 import type { ChatThread } from '../types';
-import { mockUsers, mockProjects, mockRequests, mockInvoices, mockQuickServiceOrders } from '../mock/data';
 import { formatDateTime } from '../utils/formatters';
 
 export const ChatsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [chats, setChats] = useState<ChatThread[]>([]);
+  const [totalLoaded, setTotalLoaded] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [filters, setFilters] = useState({
     request: '',
     clientPhone: '',
     contractorPhone: '',
+    requestKind: '' as '' | 'quick' | 'regular',
   });
   const [showFilters, setShowFilters] = useState(false);
 
   useEffect(() => {
-    loadChats();
-  }, []);
+    const t = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 350);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
 
-  const loadChats = async () => {
+  const loadChats = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await adminApi.listChatThreads();
+      const data = await adminApi.listChatThreads({
+        q: debouncedSearch || undefined,
+        filterRequestId: filters.request || undefined,
+        clientPhone: filters.clientPhone || undefined,
+        contractorPhone: filters.contractorPhone || undefined,
+        requestKind: filters.requestKind || undefined,
+        limit: 500,
+        page: 1,
+      });
       setChats(data);
+      setTotalLoaded(data.length);
     } catch (error) {
       console.error('Load error:', error);
+      setChats([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [debouncedSearch, filters.request, filters.clientPhone, filters.contractorPhone, filters.requestKind]);
 
-  const filteredChats = useMemo(() => {
-    let filtered = chats;
-
-    // Search filter
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(chat => {
-        const client = mockUsers.find(u => u.id === chat.clientId);
-        const contractor = mockUsers.find(u => u.id === chat.contractorId);
-        return (
-          chat.id.toLowerCase().includes(query) ||
-          (client && client.name.toLowerCase().includes(query)) ||
-          (contractor && contractor.name.toLowerCase().includes(query)) ||
-          (chat.lastMessage && chat.lastMessage.content.toLowerCase().includes(query))
-        );
-      });
-    }
-
-    // Request filter
-    if (filters.request) {
-      filtered = filtered.filter(chat => {
-        // Get the request ID from the related entity
-        let requestId: string | null = null;
-        if (chat.relatedType === 'request') {
-          requestId = chat.relatedId;
-        } else if (chat.relatedType === 'project') {
-          const project = mockProjects.find(p => p.id === chat.relatedId);
-          if (project) requestId = project.requestId;
-        } else if (chat.relatedType === 'invoice') {
-          const invoice = mockInvoices.find(i => i.id === chat.relatedId);
-          if (invoice) {
-            const project = mockProjects.find(p => p.id === invoice.projectId);
-            if (project) requestId = project.requestId;
-          }
-        }
-        return requestId === filters.request;
-      });
-    }
-
-    // Client phone filter
-    if (filters.clientPhone) {
-      filtered = filtered.filter(chat => {
-        const client = mockUsers.find(u => u.id === chat.clientId);
-        return client && client.phone === filters.clientPhone;
-      });
-    }
-
-    // Contractor phone filter
-    if (filters.contractorPhone) {
-      filtered = filtered.filter(chat => {
-        const contractor = mockUsers.find(u => u.id === chat.contractorId);
-        return contractor && contractor.phone === filters.contractorPhone;
-      });
-    }
-
-    return filtered;
-  }, [chats, searchQuery, filters]);
+  useEffect(() => {
+    void loadChats();
+  }, [loadChats]);
 
   const handleExport = () => {
-    // TODO: Implement export functionality
-    console.log('Export chats:', filteredChats);
+    console.log('Export chats:', chats);
   };
 
-  // Generate unique options for searchable selects
   const uniqueRequests = useMemo(() => {
-    const requests = chats
-      .map(chat => {
-        // Get the request ID from the related entity
-        let requestId: string | null = null;
-        if (chat.relatedType === 'request') {
-          requestId = chat.relatedId;
-        } else if (chat.relatedType === 'project') {
-          const project = mockProjects.find(p => p.id === chat.relatedId);
-          if (project) requestId = project.requestId;
-        } else if (chat.relatedType === 'invoice') {
-          const invoice = mockInvoices.find(i => i.id === chat.relatedId);
-          if (invoice) {
-            const project = mockProjects.find(p => p.id === invoice.projectId);
-            if (project) requestId = project.requestId;
-          }
-        }
-        if (!requestId) return null;
-        const request = mockRequests.find(r => r.id === requestId);
-        return request ? { label: `${request.id} - ${request.title}`, value: request.id } : null;
-      })
-      .filter((r): r is { label: string; value: string } => r !== null);
-    
-    const unique = Array.from(new Map(requests.map(r => [r.value, r])).values());
-    return unique.sort((a, b) => a.label.localeCompare(b.label));
+    const map = new Map<string, string>();
+    for (const c of chats) {
+      const fid = c.filterRequestId || (c.relatedType === 'request' ? c.relatedId : '');
+      if (!fid) continue;
+      const label = c.relatedTitle ? `${fid.slice(-8)} — ${c.relatedTitle}` : fid;
+      if (!map.has(fid)) map.set(fid, label);
+    }
+    return [...map.entries()]
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'ar'));
   }, [chats]);
 
   const uniqueClientPhones = useMemo(() => {
-    const phones = chats
-      .map(chat => {
-        const client = mockUsers.find(u => u.id === chat.clientId);
-        return client ? { label: client.phone, value: client.phone } : null;
-      })
-      .filter((p): p is { label: string; value: string } => p !== null);
-    
-    const unique = Array.from(new Map(phones.map(p => [p.value, p])).values());
-    return unique.sort((a, b) => a.label.localeCompare(b.label));
+    const set = new Set<string>();
+    for (const c of chats) {
+      if (c.clientPhone) set.add(c.clientPhone);
+    }
+    return [...set]
+      .sort()
+      .map((phone) => ({ value: phone, label: phone }));
   }, [chats]);
 
   const uniqueContractorPhones = useMemo(() => {
-    const phones = chats
-      .map(chat => {
-        const contractor = mockUsers.find(u => u.id === chat.contractorId);
-        return contractor ? { label: contractor.phone, value: contractor.phone } : null;
-      })
-      .filter((p): p is { label: string; value: string } => p !== null);
-    
-    const unique = Array.from(new Map(phones.map(p => [p.value, p])).values());
-    return unique.sort((a, b) => a.label.localeCompare(b.label));
+    const set = new Set<string>();
+    for (const c of chats) {
+      if (c.contractorPhone) set.add(c.contractorPhone);
+    }
+    return [...set]
+      .sort()
+      .map((phone) => ({ value: phone, label: phone }));
   }, [chats]);
 
   const resetFilters = () => {
@@ -158,80 +97,30 @@ export const ChatsPage: React.FC = () => {
       request: '',
       clientPhone: '',
       contractorPhone: '',
+      requestKind: '',
     });
     setSearchQuery('');
   };
 
   const getRelatedEntityLink = (chat: ChatThread) => {
-    if (chat.relatedType === 'project') {
-      const project = mockProjects.find(p => p.id === chat.relatedId);
-      if (project) {
-        const request = mockRequests.find(r => r.id === project.requestId);
-        if (request) return `/requests/regular/${request.id}`;
-      }
-      return `/projects/${chat.relatedId}`;
-    } else if (chat.relatedType === 'request') {
-      return `/requests/regular/${chat.relatedId}`;
-    } else if (chat.relatedType === 'invoice') {
-      return `/invoices/${chat.relatedId}`;
-    }
-    return '#';
+    if (chat.relatedType === 'project') return `/projects/${chat.relatedId}`;
+    if (chat.relatedType === 'invoice') return `/invoices/${chat.relatedId}`;
+    if (chat.requestKind === 'quick') return `/requests/quick/${chat.relatedId}`;
+    return `/requests/regular/${chat.relatedId}`;
   };
 
-  const getRelatedEntityTitle = (chat: ChatThread) => {
-    if (chat.relatedType === 'project') {
-      const project = mockProjects.find(p => p.id === chat.relatedId);
-      if (project) {
-        const request = mockRequests.find(r => r.id === project.requestId);
-        if (request) return request.title;
-      }
-      return project ? project.title : chat.relatedId;
-    } else if (chat.relatedType === 'request') {
-      const request = mockRequests.find(r => r.id === chat.relatedId);
-      return request ? request.title : chat.relatedId;
-    } else if (chat.relatedType === 'invoice') {
-      const invoice = mockInvoices.find(i => i.id === chat.relatedId);
-      return invoice ? invoice.title : chat.relatedId;
-    }
-    return chat.relatedId;
-  };
-
-  // Helper function to get request ID from chat thread
-  const getRequestIdFromChat = (chat: ChatThread): string | null => {
-    if (chat.relatedType === 'request') {
-      return chat.relatedId;
-    } else if (chat.relatedType === 'project') {
-      const project = mockProjects.find(p => p.id === chat.relatedId);
-      return project ? project.requestId : null;
-    } else if (chat.relatedType === 'invoice') {
-      const invoice = mockInvoices.find(i => i.id === chat.relatedId);
-      if (invoice) {
-        const project = mockProjects.find(p => p.id === invoice.projectId);
-        return project ? project.requestId : null;
-      }
-    }
-    return null;
-  };
-
-  // Helper function to determine if request is regular or quick service
-  const getRequestType = (requestId: string | null): 'regular' | 'quick' => {
-    if (!requestId) return 'regular';
-    const regularRequest = mockRequests.find(r => r.id === requestId);
-    if (regularRequest) return 'regular';
-    const quickOrder = mockQuickServiceOrders.find(q => q.id === requestId);
-    if (quickOrder) return 'quick';
-    return 'regular'; // Default
-  };
+  const getRelatedEntityTitle = (chat: ChatThread) =>
+    chat.relatedTitle?.trim() || chat.relatedId || '—';
 
   const columns = [
     {
       key: 'client',
       label: 'العميل',
       render: (chat: ChatThread) => {
-        const client = mockUsers.find(u => u.id === chat.clientId);
-        return client ? (
-          <Link to={`/users/clients/${client.id}`} className="text-blue-600 hover:underline">
-            {client.name}
+        const name = chat.clientName?.trim();
+        return name ? (
+          <Link to={`/users/clients/${chat.clientId}`} className="text-blue-600 hover:underline">
+            {name}
           </Link>
         ) : (
           <span className="text-gray-400">-</span>
@@ -242,13 +131,13 @@ export const ChatsPage: React.FC = () => {
       key: 'contractor',
       label: 'المقاول',
       render: (chat: ChatThread) => {
-        const contractor = mockUsers.find(u => u.id === chat.contractorId);
-        return contractor ? (
+        const name = chat.contractorName?.trim();
+        return name ? (
           <Link
-            to={`/users/contractors/${contractor.id}`}
+            to={`/users/contractors/${chat.contractorId}`}
             className="text-blue-600 hover:underline"
           >
-            {contractor.name}
+            {name}
           </Link>
         ) : (
           <span className="text-gray-400">-</span>
@@ -259,12 +148,13 @@ export const ChatsPage: React.FC = () => {
       key: 'relatedType',
       label: 'نوع الطلب',
       render: (chat: ChatThread) => {
-        const requestId = getRequestIdFromChat(chat);
-        const type = getRequestType(requestId);
+        const type = chat.requestKind === 'quick' ? 'quick' : 'regular';
         return (
-          <span className={`text-xs px-2 py-1 rounded ${
-            type === 'regular' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
-          }`}>
+          <span
+            className={`text-xs px-2 py-1 rounded ${
+              type === 'regular' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
+            }`}
+          >
             {type === 'regular' ? 'عادي' : 'خدمة سريعة'}
           </span>
         );
@@ -345,20 +235,37 @@ export const ChatsPage: React.FC = () => {
             value: filters.contractorPhone,
             onChange: (value) => setFilters({ ...filters, contractorPhone: value }),
           },
+          {
+            type: 'searchable-select',
+            key: 'requestKind',
+            label: 'نوع الطلب',
+            options: [
+              { value: '', label: 'الكل' },
+              { value: 'regular', label: 'عادي' },
+              { value: 'quick', label: 'خدمة سريعة' },
+            ],
+            value: filters.requestKind,
+            onChange: (value) =>
+              setFilters({
+                ...filters,
+                requestKind: (value as 'quick' | 'regular' | '') || '',
+              }),
+          },
         ]}
       />
 
       <div className="bg-white rounded-lg  border border-gray-200">
-        {filteredChats.length === 0 && !loading ? (
+        {chats.length === 0 && !loading ? (
           <EmptyState title="لا توجد محادثات مطابقة للبحث" />
         ) : (
-          <Table columns={columns} data={filteredChats} loading={loading} />
+          <Table columns={columns} data={chats} loading={loading} />
         )}
       </div>
 
-      {filteredChats.length > 0 && (
+      {chats.length > 0 && (
         <div className="text-sm text-gray-600">
-          عرض {filteredChats.length} من {chats.length} محادثة
+          عرض {chats.length}
+          {totalLoaded >= 500 ? '+' : ''} محادثة
         </div>
       )}
     </div>

@@ -1,5 +1,7 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { DashboardLayout } from './layouts/DashboardLayout';
+import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { UsersPage } from './pages/UsersPage';
 import { RequestsPage } from './pages/RequestsPage';
@@ -38,78 +40,86 @@ import { BIPage } from './pages/BIPage';
 import { PromoCodesPage } from './pages/PromoCodesPage';
 import './App.css';
 
+function ProtectedLayout() {
+  const { admin, bootstrapping } = useAuth();
+
+  if (bootstrapping) {
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center bg-white text-[#666666] text-sm"
+        dir="rtl"
+      >
+        جاري التحميل…
+      </div>
+    );
+  }
+
+  if (!admin) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return (
+    <DashboardLayout>
+      <Outlet />
+    </DashboardLayout>
+  );
+}
+
+function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route element={<ProtectedLayout />}>
+        <Route path="/" element={<DashboardPage />} />
+        <Route path="/users" element={<UsersPage />} />
+        <Route path="/requests" element={<RequestsPage />} />
+        <Route path="/quotations" element={<QuotationsPage />} />
+        <Route path="/contracts" element={<ContractsPage />} />
+        <Route path="/projects" element={<ProjectsPage />} />
+        <Route path="/invoices" element={<InvoicesPage />} />
+        <Route path="/payments" element={<PaymentsPage />} />
+        <Route path="/complaints" element={<ComplaintsPage />} />
+        <Route path="/chats" element={<ChatsPage />} />
+        <Route path="/chats/settings" element={<ChatSettingsPage />} />
+        <Route path="/chats/bans" element={<ChatBansPage />} />
+        <Route path="/notifications" element={<NotificationsPage />} />
+        <Route path="/milestones" element={<MilestonesPage />} />
+        <Route path="/support-tickets" element={<SupportTicketsPage />} />
+        <Route path="/services" element={<ServicesPage />} />
+        <Route path="/promo-codes" element={<PromoCodesPage />} />
+        <Route path="/bi" element={<BIPage />} />
+
+        <Route path="/users/clients/:id" element={<ClientDetailsPage />} />
+        <Route path="/users/contractors/:id" element={<ContractorDetailsPage />} />
+        <Route path="/requests/regular/:id" element={<RegularRequestDetailsPage />} />
+        <Route path="/requests/quick/:id" element={<QuickServiceOrderDetailsPage />} />
+        <Route path="/quotations/:id" element={<QuotationDetailsPage />} />
+        <Route path="/contracts/:id" element={<ContractDetailsPage />} />
+        <Route path="/projects/:id" element={<ProjectDetailsPage />} />
+        <Route path="/invoices/:id" element={<InvoiceDetailsPage />} />
+        <Route path="/payments/:id" element={<PaymentDetailsPage />} />
+        <Route path="/complaints/:id" element={<ComplaintDetailsPage />} />
+        <Route path="/chats/:id" element={<ChatDetailsPage />} />
+        <Route path="/milestones/:id" element={<MilestoneDetailsPage />} />
+        <Route path="/support-tickets/:id" element={<SupportTicketDetailsPage />} />
+        <Route path="/notifications/:id" element={<NotificationDetailsPage />} />
+        <Route path="/services/groups/:id" element={<ServiceGroupDetailsPage />} />
+        <Route path="/services/categories/:id" element={<CategoryDetailsPage />} />
+        <Route path="/services/subcategories/:id" element={<SubcategoryDetailsPage />} />
+        <Route path="/services/quick/:id" element={<QuickServiceDetailsPage />} />
+      </Route>
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
 function App() {
   return (
-    <BrowserRouter>
-      <DashboardLayout>
-        <Routes>
-          {/* الصفحات الرئيسية */}
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/users" element={<UsersPage />} />
-          <Route path="/requests" element={<RequestsPage />} />
-          <Route path="/quotations" element={<QuotationsPage />} />
-          <Route path="/contracts" element={<ContractsPage />} />
-          <Route path="/projects" element={<ProjectsPage />} />
-          <Route path="/invoices" element={<InvoicesPage />} />
-          <Route path="/payments" element={<PaymentsPage />} />
-          <Route path="/complaints" element={<ComplaintsPage />} />
-          <Route path="/chats" element={<ChatsPage />} />
-          <Route path="/chats/settings" element={<ChatSettingsPage />} />
-          <Route path="/chats/bans" element={<ChatBansPage />} />
-          <Route path="/notifications" element={<NotificationsPage />} />
-          <Route path="/milestones" element={<MilestonesPage />} />
-          <Route path="/support-tickets" element={<SupportTicketsPage />} />
-          <Route path="/services" element={<ServicesPage />} />
-          <Route path="/promo-codes" element={<PromoCodesPage />} />
-          <Route path="/bi" element={<BIPage />} />
-
-          {/* صفحات التفاصيل */}
-          {/* Users */}
-          <Route path="/users/clients/:id" element={<ClientDetailsPage />} />
-          <Route path="/users/contractors/:id" element={<ContractorDetailsPage />} />
-          
-          {/* Requests */}
-          <Route path="/requests/regular/:id" element={<RegularRequestDetailsPage />} />
-          <Route path="/requests/quick/:id" element={<QuickServiceOrderDetailsPage />} />
-          
-          {/* Quotations */}
-          <Route path="/quotations/:id" element={<QuotationDetailsPage />} />
-          
-          {/* Contracts */}
-          <Route path="/contracts/:id" element={<ContractDetailsPage />} />
-          
-          {/* Projects */}
-          <Route path="/projects/:id" element={<ProjectDetailsPage />} />
-          
-          {/* Invoices */}
-          <Route path="/invoices/:id" element={<InvoiceDetailsPage />} />
-          
-          {/* Payments */}
-          <Route path="/payments/:id" element={<PaymentDetailsPage />} />
-          
-          {/* Complaints */}
-          <Route path="/complaints/:id" element={<ComplaintDetailsPage />} />
-          
-          {/* Chats */}
-          <Route path="/chats/:id" element={<ChatDetailsPage />} />
-          
-          {/* Milestones */}
-          <Route path="/milestones/:id" element={<MilestoneDetailsPage />} />
-          
-          {/* Support Tickets */}
-          <Route path="/support-tickets/:id" element={<SupportTicketDetailsPage />} />
-          
-          {/* Notifications */}
-          <Route path="/notifications/:id" element={<NotificationDetailsPage />} />
-          
-          {/* Services */}
-          <Route path="/services/groups/:id" element={<ServiceGroupDetailsPage />} />
-          <Route path="/services/categories/:id" element={<CategoryDetailsPage />} />
-          <Route path="/services/subcategories/:id" element={<SubcategoryDetailsPage />} />
-          <Route path="/services/quick/:id" element={<QuickServiceDetailsPage />} />
-        </Routes>
-      </DashboardLayout>
-    </BrowserRouter>
+    <AuthProvider>
+      <BrowserRouter>
+        <AppRoutes />
+      </BrowserRouter>
+    </AuthProvider>
   );
 }
 

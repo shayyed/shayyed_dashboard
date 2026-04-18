@@ -12,7 +12,6 @@ import { adminApi } from '../services/api';
 import type { User, ContractorProfile } from '../types';
 import { UserRole, VerificationStatus } from '../types';
 import { formatDate } from '../utils/formatters';
-import { mockRequests, mockQuickServiceOrders, mockProjects, mockCities } from '../mock/data';
 
 const TABS = [
   { label: 'العملاء', value: 'CLIENT' },
@@ -40,10 +39,30 @@ export const UsersPage: React.FC = () => {
   const [contractorRegistrationDateFrom, setContractorRegistrationDateFrom] = useState('');
   const [contractorRegistrationDateTo, setContractorRegistrationDateTo] = useState('');
   const [contractorCity, setContractorCity] = useState('');
+  const [contractorCityOptions, setContractorCityOptions] = useState<{ label: string; value: string }[]>([]);
 
   useEffect(() => {
     loadData();
   }, [activeTab]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const cities = await adminApi.listCities();
+        if (cancelled) return;
+        setContractorCityOptions([
+          { label: 'الكل', value: '' },
+          ...cities.map((c) => ({ label: c.name, value: c.name })),
+        ]);
+      } catch {
+        if (!cancelled) setContractorCityOptions([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const loadData = async () => {
     try {
@@ -60,14 +79,6 @@ export const UsersPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
-
-  // حساب الإحصائيات للعملاء
-  const getClientStats = (userId: string) => {
-    const requests = adminApi.listRequests().then(r => r.filter(req => req.clientId === userId));
-    const projects = adminApi.listProjects().then(p => p.filter(proj => proj.clientId === userId));
-    // هذا مثال - في الواقع يجب أن يكون async
-    return { requestsCount: 0, activeProjectsCount: 0 };
   };
 
   // فلترة العملاء
@@ -139,19 +150,13 @@ export const UsersPage: React.FC = () => {
     return filtered;
   }, [contractors, contractorSearch, contractorVerificationStatus, contractorRatingMin, contractorRatingMax, contractorRegistrationDateFrom, contractorRegistrationDateTo, contractorCity]);
 
-  // دالة لتحويل المعرف إلى رقم هوية حقيقي
-  const getNationalId = (userId: string): string => {
-    // دائماً استخدم رقم الهوية الحقيقي
-    return '1090837671';
-  };
-
   // أعمدة جدول العملاء
   const clientColumns = [
     { key: 'name', label: 'الاسم' },
     { 
       key: 'id', 
       label: 'رقم الهوية',
-      render: (user: User) => getNationalId(user.id)
+      render: (user: User) => user.pid || '—'
     },
     { key: 'phone', label: 'رقم الجوال' },
     { 
@@ -177,8 +182,8 @@ export const UsersPage: React.FC = () => {
     { key: 'name', label: 'الاسم' },
     { 
       key: 'id', 
-      label: 'رقم الهوية',
-      render: (contractor: ContractorProfile) => getNationalId(contractor.id)
+      label: 'رقم الهوية / السجل',
+      render: (contractor: ContractorProfile) => contractor.commercialRegistration || contractor.pid || '—'
     },
     { key: 'phone', label: 'رقم الجوال' },
     { 
@@ -374,7 +379,7 @@ export const UsersPage: React.FC = () => {
                 type: 'searchable-select',
                 key: 'city',
                 label: 'المدينة',
-                options: mockCities.map(city => ({ label: city.name, value: city.name })),
+                options: contractorCityOptions,
                 value: contractorCity,
                 onChange: setContractorCity,
               },

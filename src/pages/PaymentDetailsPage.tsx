@@ -7,10 +7,9 @@ import { Modal } from '../components/Modal';
 import { Input } from '../components/Input';
 import { EmptyState } from '../components/EmptyState';
 import { adminApi } from '../services/api';
-import type { Payment } from '../types';
+import type { Payment, Invoice } from '../types';
 import { PaymentStatus, InvoiceStatus } from '../types';
-import { mockUsers, mockInvoices, mockProjects, mockContracts } from '../mock/data';
-import { formatDate, formatCurrency, formatDateTime } from '../utils/formatters';
+import { formatDate, formatCurrency, formatDateTime, getInvoiceDisplayNumber } from '../utils/formatters';
 import { ArrowRight } from 'lucide-react';
 
 export const PaymentDetailsPage: React.FC = () => {
@@ -18,6 +17,7 @@ export const PaymentDetailsPage: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [payment, setPayment] = useState<Payment | null>(null);
+  const [invoice, setInvoice] = useState<Invoice | null>(null);
   
   // Modals
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -40,10 +40,15 @@ export const PaymentDetailsPage: React.FC = () => {
   const loadPayment = async () => {
     try {
       setLoading(true);
+      setInvoice(null);
       const data = await adminApi.getPayment(id!);
       if (data) {
         setPayment(data);
         setStatusForm({ status: data.status });
+        if (data.invoiceId) {
+          const inv = await adminApi.getInvoice(data.invoiceId);
+          setInvoice(inv);
+        }
       }
     } catch (error) {
       console.error('Load error:', error);
@@ -123,21 +128,12 @@ export const PaymentDetailsPage: React.FC = () => {
     );
   }
 
-  const invoice = mockInvoices.find(i => i.id === payment.invoiceId);
-  const client = invoice ? mockUsers.find(u => u.id === invoice.clientId) : null;
-  const contractor = invoice ? mockUsers.find(u => u.id === invoice.contractorId) : null;
-  
-  // Find related milestone
-  let relatedMilestone = null;
-  if (invoice && invoice.milestoneId) {
-    const project = mockProjects.find(p => p.id === invoice.projectId);
-    if (project) {
-      const contract = mockContracts.find(c => c.id === project.contractId);
-      if (contract) {
-        relatedMilestone = contract.milestones.find(m => m.id === invoice.milestoneId);
-      }
-    }
-  }
+  const displayRef =
+    (payment.referenceNumber && payment.referenceNumber.trim()) || payment.id;
+  const milestoneText =
+    (payment.milestoneLabel && payment.milestoneLabel.trim()) ||
+    (invoice?.milestoneLabel && invoice.milestoneLabel.trim()) ||
+    '';
 
   return (
     <div className="space-y-6">
@@ -147,9 +143,7 @@ export const PaymentDetailsPage: React.FC = () => {
           العودة إلى المدفوعات
         </Button>
         <h1 className="text-2xl font-semibold text-[#111111]">تفاصيل الدفعة</h1>
-        <p className="text-sm text-gray-600 mt-1">
-          رقم المرجع: {payment.referenceNumber || payment.id}
-        </p>
+        <p className="text-sm text-gray-600 mt-1">رقم المرجع: {displayRef}</p>
       </div>
 
       {/* Payment Info */}
@@ -161,7 +155,7 @@ export const PaymentDetailsPage: React.FC = () => {
           </div>
           <div>
             <p className="text-sm text-gray-600 mb-1">رقم المرجع</p>
-            <p className="text-[#111111] font-medium">{payment.referenceNumber || '-'}</p>
+            <p className="text-[#111111] font-medium">{payment.referenceNumber?.trim() || '-'}</p>
           </div>
           <div>
             <p className="text-sm text-gray-600 mb-1">المبلغ</p>
@@ -226,127 +220,102 @@ export const PaymentDetailsPage: React.FC = () => {
 
       {/* Related Entities - First Row: Invoice and Milestone */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {invoice && (
+        {payment.invoiceId && (
           <Card title="معلومات الفاتورة">
             <div className="space-y-2">
               <div>
                 <p className="text-sm text-gray-600">رقم الفاتورة</p>
-                <Link to={`/invoices/${invoice.id}`} className="text-blue-600 hover:underline">
-                  {invoice.id}
+                <Link
+                  to={`/invoices/${payment.invoiceId}`}
+                  className="text-blue-600 hover:underline"
+                >
+                  {getInvoiceDisplayNumber({
+                    id: payment.invoiceId,
+                    invoiceNumber: invoice?.invoiceNumber ?? payment.invoiceNumber,
+                  })}
                 </Link>
               </div>
               <div>
                 <p className="text-sm text-gray-600">عنوان الفاتورة</p>
-                <p className="text-[#111111]">{invoice.title}</p>
+                <p className="text-[#111111]">
+                  {invoice?.title || payment.invoiceTitle || '—'}
+                </p>
               </div>
-              <div>
-                <p className="text-sm text-gray-600">المبلغ الإجمالي</p>
-                <p className="text-[#111111] font-medium">{formatCurrency(invoice.totalAmount)}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">الحالة</p>
-                {invoice.status === InvoiceStatus.PAID ? (
-                  <StatusBadge status="PAID" customLabel="مدفوعة" />
-                ) : invoice.status === InvoiceStatus.SENT || invoice.status === InvoiceStatus.APPROVED ? (
-                  <span className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-[#FDB022]/10 text-[#FDB022]">
-                    بانتظار الدفع
-                  </span>
-                ) : (
-                  <StatusBadge status={invoice.status} />
-                )}
-              </div>
+              {invoice && (
+                <>
+                  <div>
+                    <p className="text-sm text-gray-600">المبلغ الإجمالي</p>
+                    <p className="text-[#111111] font-medium">
+                      {formatCurrency(invoice.totalAmount)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">الحالة</p>
+                    {invoice.status === InvoiceStatus.PAID ? (
+                      <StatusBadge status="PAID" customLabel="مدفوعة" />
+                    ) : invoice.status === InvoiceStatus.SENT ||
+                      invoice.status === InvoiceStatus.APPROVED ? (
+                      <span className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-[#FDB022]/10 text-[#FDB022]">
+                        بانتظار الدفع
+                      </span>
+                    ) : (
+                      <StatusBadge status={invoice.status} />
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </Card>
         )}
 
-        {/* Related Milestone */}
-        {relatedMilestone && invoice && (
+        {milestoneText ? (
           <Card title="الدفعة المرتبطة">
-            <div className="space-y-4">
-              <div>
-                <p className="text-sm text-gray-600 mb-1">اسم الدفعة</p>
-                {(() => {
-                  const project = mockProjects.find(p => p.id === invoice.projectId);
-                  if (!project) return <span className="text-gray-400">-</span>;
-                  const contract = mockContracts.find(c => c.id === project.contractId);
-                  if (!contract) return <span className="text-gray-400">-</span>;
-                  const milestoneIndex = contract.milestones.findIndex(m => m.id === relatedMilestone!.id) + 1;
-                  return (
-                    <Link to={`/milestones/${relatedMilestone.id}`} className="text-blue-600 hover:underline font-medium">
-                      الدفعة {milestoneIndex} - {relatedMilestone.name}
-                    </Link>
-                  );
-                })()}
-              </div>
-              <div>
-                <p className="text-sm text-gray-600 mb-1">حالة الدفعة</p>
-                <span className={`text-xs px-2 py-1 rounded inline-block ${
-                  relatedMilestone.status === 'Paid' ? 'bg-green-100 text-green-700' :
-                  relatedMilestone.status === 'Due' ? 'bg-yellow-100 text-yellow-700' :
-                  'bg-gray-100 text-gray-700'
-                }`}>
-                  {relatedMilestone.status === 'Paid' ? 'مدفوعة' :
-                   relatedMilestone.status === 'Due' ? 'مستحقة' : 'غير مستحقة'}
-                </span>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600 mb-1">مبلغ الدفعة</p>
-                <p className="text-[#111111] font-medium">{formatCurrency(relatedMilestone.amount)}</p>
-              </div>
+            <div>
+              <p className="text-sm text-gray-600 mb-1">الوصف</p>
+              <p className="text-[#111111] font-medium">{milestoneText}</p>
             </div>
           </Card>
-        )}
+        ) : null}
       </div>
 
       {/* Second Row: Client and Contractor */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {client && (
+        {payment.clientId && (
           <Card title="معلومات العميل">
             <div className="space-y-2">
               <div>
                 <p className="text-sm text-gray-600">الاسم</p>
-                <Link to={`/users/clients/${client.id}`} className="text-blue-600 hover:underline">
-                  {client.name}
+                <Link
+                  to={`/users/clients/${payment.clientId}`}
+                  className="text-blue-600 hover:underline"
+                >
+                  {payment.clientName || invoice?.clientName || '—'}
                 </Link>
               </div>
               <div>
                 <p className="text-sm text-gray-600">معرف العميل</p>
-                <p className="text-[#111111]">{client.id}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">رقم الجوال</p>
-                <p className="text-[#111111]">{client.phone}</p>
+                <p className="text-[#111111]">{payment.clientId}</p>
               </div>
             </div>
           </Card>
         )}
 
-        {contractor && (
+        {payment.contractorId && (
           <Card title="معلومات المقاول">
             <div className="space-y-2">
               <div>
-                <p className="text-sm text-gray-600">الاسم</p>
+                <p className="text-sm text-gray-600">الاسم / الشركة</p>
                 <Link
-                  to={`/users/contractors/${contractor.id}`}
+                  to={`/users/contractors/${payment.contractorId}`}
                   className="text-blue-600 hover:underline"
                 >
-                  {contractor.name}
+                  {payment.contractorName || invoice?.contractorName || '—'}
                 </Link>
               </div>
               <div>
                 <p className="text-sm text-gray-600">معرف المقاول</p>
-                <p className="text-[#111111]">{contractor.id}</p>
+                <p className="text-[#111111]">{payment.contractorId}</p>
               </div>
-              <div>
-                <p className="text-sm text-gray-600">رقم الجوال</p>
-                <p className="text-[#111111]">{contractor.phone}</p>
-              </div>
-              {'companyName' in contractor && contractor.companyName && (
-                <div>
-                  <p className="text-sm text-gray-600">اسم الشركة</p>
-                  <p className="text-[#111111]">{contractor.companyName}</p>
-                </div>
-              )}
             </div>
           </Card>
         )}

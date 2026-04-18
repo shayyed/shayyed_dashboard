@@ -8,7 +8,6 @@ import { adminApi } from '../services/api';
 import type { Quotation } from '../types';
 import { QuotationStatus } from '../types';
 import { formatSar, formatDate } from '../utils/formatters';
-import { mockUsers, mockRequests, mockQuickServiceOrders, mockContracts, mockProjects } from '../mock/data';
 
 export const QuotationDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -23,11 +22,11 @@ export const QuotationDetailsPage: React.FC = () => {
   }, [id]);
 
   const loadQuotation = async () => {
+    if (!id) return;
     try {
       setLoading(true);
-      const quotations = await adminApi.listQuotations();
-      const found = quotations.find(q => q.id === id);
-      setQuotation(found || null);
+      const found = await adminApi.getQuotation(id);
+      setQuotation(found);
     } catch (error) {
       console.error('Load error:', error);
     } finally {
@@ -51,28 +50,14 @@ export const QuotationDetailsPage: React.FC = () => {
     );
   }
 
-  // تحديد نوع الطلب
-  const regularRequest = mockRequests.find(r => r.id === quotation.requestId);
-  const quickOrder = mockQuickServiceOrders.find(q => q.id === quotation.requestId);
-  const isRegularRequest = !!regularRequest;
-  const requestTitle = regularRequest?.title || quickOrder?.title || quickOrder?.serviceTitle || '-';
-  const requestPath = isRegularRequest ? `/requests/regular/${quotation.requestId}` : `/requests/quick/${quotation.requestId}`;
+  const isRegularRequest = quotation.requestKind !== 'quick';
+  const requestTitle = quotation.requestTitle || '-';
+  const requestPath = isRegularRequest
+    ? `/requests/regular/${quotation.requestId}`
+    : `/requests/quick/${quotation.requestId}`;
 
-  // العقد المرتبط
-  const relatedContract = mockContracts.find(c => c.quotationId === quotation.id);
-
-  // المشروع المرتبط
-  const relatedProject = relatedContract ? mockProjects.find(p => p.contractId === relatedContract.id) : null;
-
-  // العميل
-  const client = mockUsers.find(u => {
-    if (regularRequest) return u.id === regularRequest.clientId;
-    if (quickOrder) return u.id === quickOrder.clientId;
-    return false;
-  });
-
-  // المقاول
-  const contractor = mockUsers.find(u => u.id === quotation.contractorId);
+  const client = quotation.client;
+  const contractor = quotation.contractor;
 
   // حساب مجموع الدفعات
   const totalInstallments = quotation.installments?.reduce((sum, inst) => sum + inst.amount, 0) || 0;
@@ -99,8 +84,13 @@ export const QuotationDetailsPage: React.FC = () => {
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-sm text-[#666666] mb-1">معرف العرض</p>
-                  <p className="text-[#111111] font-medium">{quotation.id}</p>
+                  <p className="text-sm text-[#666666] mb-1">رقم العرض</p>
+                  <p className="text-[#111111] font-medium">
+                    {quotation.quotationNumber || quotation.id}
+                  </p>
+                  {quotation.quotationNumber && quotation.quotationNumber !== quotation.id && (
+                    <p className="text-xs text-[#999999] mt-1">معرّف النظام: {quotation.id}</p>
+                  )}
                 </div>
                 <div>
                   <p className="text-sm text-[#666666] mb-1">الحالة</p>
@@ -149,11 +139,11 @@ export const QuotationDetailsPage: React.FC = () => {
                 </div>
               )}
 
-              {quotation.attachments.length > 0 && (
+              {(quotation.attachments?.length ?? 0) > 0 && (
                 <div>
                   <p className="text-sm text-[#666666] mb-2">المرفقات</p>
                   <div className="space-y-2">
-                    {quotation.attachments.map((attachment, idx) => {
+                    {(quotation.attachments || []).map((attachment, idx) => {
                       const fileName = attachment.split('/').pop() || attachment;
                       const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(fileName);
                       const isPdf = /\.pdf$/i.test(fileName);
@@ -248,9 +238,9 @@ export const QuotationDetailsPage: React.FC = () => {
             <h2 className="text-lg font-semibold text-[#111111] mb-4">المقاول</h2>
             <div className="space-y-3">
               <div>
-                <p className="text-sm text-[#666666] mb-1">الاسم</p>
+                <p className="text-sm text-[#666666] mb-1">الشركة / الاسم</p>
                 <Link to={`/users/contractors/${quotation.contractorId}`} className="text-blue-600 hover:underline font-medium">
-                  {quotation.contractorName}
+                  {quotation.contractor?.name || quotation.contractorName}
                 </Link>
               </div>
               <div>
@@ -310,27 +300,66 @@ export const QuotationDetailsPage: React.FC = () => {
             </div>
           </Card>
 
-          {/* معلومات العميل */}
-          {client && (
+          {(client || quotation.clientId) && (
             <Card>
               <h2 className="text-lg font-semibold text-[#111111] mb-4">العميل</h2>
               <div className="space-y-3">
                 <div>
                   <p className="text-sm text-[#666666] mb-1">الاسم</p>
-                  <Link to={`/users/clients/${client.id}`} className="text-blue-600 hover:underline font-medium">
-                    {client.name}
+                  <Link
+                    to={`/users/clients/${client?.id || quotation.clientId}`}
+                    className="text-blue-600 hover:underline font-medium"
+                  >
+                    {client?.name || quotation.clientName || quotation.clientId}
                   </Link>
                 </div>
-                <div>
-                  <p className="text-sm text-[#666666] mb-1">معرف العميل</p>
-                  <Link to={`/users/clients/${client.id}`} className="text-blue-600 hover:underline">
-                    {client.id}
-                  </Link>
-                </div>
-                <div>
-                  <p className="text-sm text-[#666666] mb-1">رقم الجوال</p>
-                  <p className="text-[#111111]">{client.phone}</p>
-                </div>
+                {quotation.clientId && (
+                  <div>
+                    <p className="text-sm text-[#666666] mb-1">معرف العميل</p>
+                    <Link
+                      to={`/users/clients/${quotation.clientId}`}
+                      className="text-blue-600 hover:underline"
+                    >
+                      {quotation.clientId}
+                    </Link>
+                  </div>
+                )}
+                {client?.phone ? (
+                  <div>
+                    <p className="text-sm text-[#666666] mb-1">رقم الجوال</p>
+                    <p className="text-[#111111]">{client.phone}</p>
+                  </div>
+                ) : null}
+              </div>
+            </Card>
+          )}
+
+          {(quotation.relatedContractId || quotation.relatedProjectId) && (
+            <Card>
+              <h2 className="text-lg font-semibold text-[#111111] mb-4">العقد والمشروع</h2>
+              <div className="space-y-3">
+                {quotation.relatedContractId && (
+                  <div>
+                    <p className="text-sm text-[#666666] mb-1">العقد</p>
+                    <Link
+                      to={`/contracts/${quotation.relatedContractId}`}
+                      className="text-blue-600 hover:underline"
+                    >
+                      {quotation.relatedContractId}
+                    </Link>
+                  </div>
+                )}
+                {quotation.relatedProjectId && (
+                  <div>
+                    <p className="text-sm text-[#666666] mb-1">المشروع</p>
+                    <Link
+                      to={`/projects/${quotation.relatedProjectId}`}
+                      className="text-blue-600 hover:underline"
+                    >
+                      {quotation.relatedProjectId}
+                    </Link>
+                  </div>
+                )}
               </div>
             </Card>
           )}

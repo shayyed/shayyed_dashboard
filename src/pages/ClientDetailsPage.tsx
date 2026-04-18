@@ -169,7 +169,11 @@ export const ClientDetailsPage: React.FC = () => {
           </div>
           <div>
             <p className="text-sm text-[#666666] mb-1">رقم الهوية الوطنية</p>
-            <p className="text-[#111111] font-medium">{client.id}</p>
+            <p className="text-[#111111] font-medium">{client.pid || '—'}</p>
+          </div>
+          <div>
+            <p className="text-sm text-[#666666] mb-1">معرف الحساب</p>
+            <p className="text-[#111111] font-medium text-sm break-all">{client.id}</p>
           </div>
           <div>
             <p className="text-sm text-[#666666] mb-1">رقم الجوال</p>

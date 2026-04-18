@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card } from '../components/Card';
 import { DatePicker } from '../components/DatePicker';
-import { formatSar, formatDate } from '../utils/formatters';
+import { formatSar } from '../utils/formatters';
 import { adminApi } from '../services/api';
 import {
   Users,
@@ -111,14 +111,9 @@ const StatCard: React.FC<{
 };
 
 export const BIPage: React.FC = () => {
-  const [fromDate, setFromDate] = useState(() => {
-    // Default to start of 2024 to include mock data
-    return '2024-01-01';
-  });
-  const [toDate, setToDate] = useState(() => {
-    // Default to end of 2024 to include mock data
-    return '2024-12-31';
-  });
+  /** Both empty = all records from inception through now. Optional lower/upper bounds when set. */
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<BIStats>({
     totalUsers: 0,
@@ -158,26 +153,55 @@ export const BIPage: React.FC = () => {
 
   const parseDateString = (dateStr: string): Date | null => {
     if (!dateStr) return null;
-    // Handle YYYY-MM-DD format (from DatePicker and API/mock data)
-    // Also handle dates with time (YYYY-MM-DDTHH:mm:ss)
     const dateOnly = dateStr.split('T')[0];
     const date = new Date(dateOnly + 'T00:00:00');
     return isNaN(date.getTime()) ? null : date;
   };
 
+  /** Parse entity timestamps (ISO with time or date-only). */
+  const parseEntityDate = (raw: string): Date | null => {
+    if (!raw) return null;
+    const d = raw.includes('T') ? new Date(raw) : new Date(`${raw.split('T')[0]}T12:00:00`);
+    return isNaN(d.getTime()) ? null : d;
+  };
+
   const isDateInRange = (dateString: string): boolean => {
     if (!dateString) return false;
-    const date = parseDateString(dateString);
-    const from = parseDateString(fromDate);
-    const to = parseDateString(toDate);
-    
-    if (!date || !from || !to) return false;
-    
-    // Set time to end of day for 'to' date to include the entire day
-    const toEndOfDay = new Date(to);
-    toEndOfDay.setHours(23, 59, 59, 999);
-    
-    return date >= from && date <= toEndOfDay;
+    const entityDate = parseEntityDate(dateString);
+    if (!entityDate) return false;
+
+    const fromRaw = fromDate.trim();
+    const toRaw = toDate.trim();
+
+    if (fromRaw && toRaw) {
+      const s = parseDateString(fromRaw);
+      const t = parseDateString(toRaw);
+      if (s && t) {
+        const startDay = new Date(s);
+        startDay.setHours(0, 0, 0, 0);
+        const endDay = new Date(t);
+        endDay.setHours(23, 59, 59, 999);
+        if (startDay > endDay) return false;
+      }
+    }
+
+    if (fromRaw) {
+      const start = parseDateString(fromRaw);
+      if (!start) return false;
+      start.setHours(0, 0, 0, 0);
+      if (entityDate < start) return false;
+    }
+
+    if (toRaw) {
+      const end = parseDateString(toRaw);
+      if (!end) return false;
+      end.setHours(23, 59, 59, 999);
+      const now = new Date();
+      const rangeEnd = end > now ? now : end;
+      if (entityDate > rangeEnd) return false;
+    }
+
+    return true;
   };
 
   useEffect(() => {
@@ -225,31 +249,19 @@ export const BIPage: React.FC = () => {
       const filteredContracts = contracts.filter(c => isDateInRange(c.createdAt));
       const filteredProjects = projects.filter(p => isDateInRange(p.createdAt));
       const filteredInvoices = invoices.filter(i => isDateInRange(i.createdAt));
-      // Payments might have createdAt with time, extract date part
-      const filteredPayments = payments.filter(p => {
-        const dateStr = p.createdAt?.split('T')[0] || p.createdAt;
-        return isDateInRange(dateStr);
-      });
+      const filteredPayments = payments.filter((p) => isDateInRange(p.createdAt || ''));
       // Milestones use dueDate (they don't have createdAt)
       const filteredMilestones = milestones.filter(m => {
         return m.dueDate ? isDateInRange(m.dueDate) : false;
       });
       const filteredComplaints = complaints.filter(c => isDateInRange(c.createdAt));
-      // Support tickets might have createdAt with time
-      const filteredSupportTickets = supportTickets.filter(t => {
-        const dateStr = t.createdAt?.split('T')[0] || t.createdAt;
-        return isDateInRange(dateStr);
-      });
+      const filteredSupportTickets = supportTickets.filter((t) => isDateInRange(t.createdAt || ''));
       // Chats use updatedAt (they might not have createdAt)
-      const filteredChats = chats.filter(c => {
-        const dateStr = (c.updatedAt || c.createdAt || '').split('T')[0];
-        return dateStr ? isDateInRange(dateStr) : false;
+      const filteredChats = chats.filter((c) => {
+        const raw = c.updatedAt || c.createdAt || '';
+        return raw ? isDateInRange(raw) : false;
       });
-      // Notifications might have createdAt with time
-      const filteredNotifications = notifications.filter(n => {
-        const dateStr = n.createdAt?.split('T')[0] || n.createdAt;
-        return isDateInRange(dateStr);
-      });
+      const filteredNotifications = notifications.filter((n) => isDateInRange(n.createdAt || ''));
 
       // Calculate stats
       const clients = filteredUsers.filter(u => u.role === 'CLIENT');
@@ -336,22 +348,40 @@ export const BIPage: React.FC = () => {
         <h1 className="text-2xl font-bold text-[#111111]">ذكاء الأعمال</h1>
       </div>
 
-      {/* Date Filters */}
+      {/* Optional range — both empty = all-time from inception */}
       <Card className="p-6">
+        <p className="text-sm text-gray-600 mb-4">
+          افتراضياً تُعرض الإحصائيات <span className="font-medium text-[#111111]">منذ بداية المنصة وحتى الآن</span>.
+          استخدم «من تاريخ» و/أو «إلى تاريخ» لتضييق الفترة (كلاهما اختياري).
+        </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <DatePicker
-            label="من تاريخ"
+            label="من تاريخ (اختياري)"
             value={fromDate}
             onChange={setFromDate}
-            placeholder="اختر تاريخ البداية"
+            placeholder="من البداية"
           />
           <DatePicker
-            label="إلى تاريخ"
+            label="إلى تاريخ (اختياري)"
             value={toDate}
             onChange={setToDate}
-            placeholder="اختر تاريخ النهاية"
+            placeholder="حتى الآن"
           />
         </div>
+        {(fromDate || toDate) ? (
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={() => {
+                setFromDate('');
+                setToDate('');
+              }}
+              className="text-sm font-medium text-gray-700 border border-gray-300 rounded-lg px-4 py-2.5 hover:bg-gray-50"
+            >
+              عرض كل الفترات (منذ الإطلاق)
+            </button>
+          </div>
+        ) : null}
       </Card>
 
       {/* Totals Section */}

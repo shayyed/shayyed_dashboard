@@ -7,13 +7,16 @@ import { ExportButton } from '../components/ExportButton';
 import { Button } from '../components/Button';
 import { EmptyState } from '../components/EmptyState';
 import { adminApi } from '../services/api';
-import type { Contract } from '../types';
+import type { Contract, ServiceRequest, Quotation, QuickServiceOrder, Project } from '../types';
 import { formatSar, formatDate } from '../utils/formatters';
-import { mockUsers, mockRequests, mockQuotations, mockProjects, mockQuickServiceOrders } from '../mock/data';
 
 export const ContractsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [contracts, setContracts] = useState<Contract[]>([]);
+  const [requests, setRequests] = useState<ServiceRequest[]>([]);
+  const [quotations, setQuotations] = useState<Quotation[]>([]);
+  const [quickOrders, setQuickOrders] = useState<QuickServiceOrder[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   
   // فلاتر
   const [search, setSearch] = useState('');
@@ -33,8 +36,18 @@ export const ContractsPage: React.FC = () => {
   const loadContracts = async () => {
     try {
       setLoading(true);
-      const data = await adminApi.listContracts();
-      setContracts(data);
+      const [c, r, q, o, p] = await Promise.all([
+        adminApi.listContracts(),
+        adminApi.listRequests(),
+        adminApi.listQuotations(),
+        adminApi.listQuickServiceOrders(),
+        adminApi.listProjects(),
+      ]);
+      setContracts(c);
+      setRequests(r);
+      setQuotations(q);
+      setQuickOrders(o);
+      setProjects(p);
     } catch (error) {
       console.error('Load error:', error);
     } finally {
@@ -44,54 +57,42 @@ export const ContractsPage: React.FC = () => {
 
   // Get unique requests for searchable select
   const uniqueRequests = useMemo(() => {
-    const requestMap = new Map();
-    mockRequests.forEach(r => {
-      requestMap.set(r.id, {
-        label: r.title,
-        value: r.id
-      });
+    const requestMap = new Map<string, { label: string; value: string }>();
+    requests.forEach((r) => {
+      requestMap.set(r.id, { label: r.title, value: r.id });
     });
-    // Contracts are only for regular requests, not quick services
+    quickOrders.forEach((o) => {
+      requestMap.set(o.id, { label: o.title || o.serviceTitle, value: o.id });
+    });
     return Array.from(requestMap.values());
-  }, []);
+  }, [requests, quickOrders]);
 
-  // Get unique quotations for searchable select
   const uniqueQuotations = useMemo(() => {
-    const quotationMap = new Map();
-    mockQuotations.forEach(q => {
+    const quotationMap = new Map<string, { label: string; value: string }>();
+    quotations.forEach((q) => {
       quotationMap.set(q.id, {
         label: `${q.contractorName} - ${formatSar(q.price)}`,
-        value: q.id
+        value: q.id,
       });
     });
     return Array.from(quotationMap.values());
-  }, []);
+  }, [quotations]);
 
-  // Get unique clients for searchable select
   const uniqueClients = useMemo(() => {
-    const clientMap = new Map();
-    contracts.forEach(c => {
-      const client = mockUsers.find(u => u.id === c.clientId);
-      if (client && !clientMap.has(client.id)) {
-        clientMap.set(client.id, {
-          label: client.name,
-          value: client.id
-        });
+    const clientMap = new Map<string, { label: string; value: string }>();
+    contracts.forEach((c) => {
+      if (c.clientId && c.clientName && !clientMap.has(c.clientId)) {
+        clientMap.set(c.clientId, { label: c.clientName, value: c.clientId });
       }
     });
     return Array.from(clientMap.values());
   }, [contracts]);
 
-  // Get unique contractors for searchable select
   const uniqueContractors = useMemo(() => {
-    const contractorMap = new Map();
-    contracts.forEach(c => {
-      const contractor = mockUsers.find(u => u.id === c.contractorId);
-      if (contractor && !contractorMap.has(contractor.id)) {
-        contractorMap.set(contractor.id, {
-          label: contractor.name,
-          value: contractor.id
-        });
+    const contractorMap = new Map<string, { label: string; value: string }>();
+    contracts.forEach((c) => {
+      if (c.contractorId && c.contractorName && !contractorMap.has(c.contractorId)) {
+        contractorMap.set(c.contractorId, { label: c.contractorName, value: c.contractorId });
       }
     });
     return Array.from(contractorMap.values());
@@ -103,12 +104,16 @@ export const ContractsPage: React.FC = () => {
     
     if (search) {
       const searchLower = search.toLowerCase();
-      filtered = filtered.filter(c => 
-        c.id.toLowerCase().includes(searchLower) ||
-        (mockProjects.find(p => p.contractId === c.id)?.title || '').toLowerCase().includes(searchLower) ||
-        (mockUsers.find(u => u.id === c.clientId)?.name || '').toLowerCase().includes(searchLower) ||
-        (mockUsers.find(u => u.id === c.contractorId)?.name || '').toLowerCase().includes(searchLower)
-      );
+      filtered = filtered.filter((c) => {
+        const proj = projects.find((p) => p.contractId === c.id);
+        return (
+          (c.contractNumber || '').toLowerCase().includes(searchLower) ||
+          c.id.toLowerCase().includes(searchLower) ||
+          (proj?.title || '').toLowerCase().includes(searchLower) ||
+          (c.clientName || '').toLowerCase().includes(searchLower) ||
+          (c.contractorName || '').toLowerCase().includes(searchLower)
+        );
+      });
     }
     
     if (request) {
@@ -144,7 +149,21 @@ export const ContractsPage: React.FC = () => {
     }
     
     return filtered;
-  }, [contracts, search, request, quotation, client, contractor, priceMin, priceMax, createdFrom, createdTo]);
+  }, [
+    contracts,
+    search,
+    request,
+    quotation,
+    client,
+    contractor,
+    priceMin,
+    priceMax,
+    createdFrom,
+    createdTo,
+    projects,
+  ]);
+
+  const displayContractRef = (c: Contract) => c.contractNumber || c.id;
 
   // أعمدة الجدول
   const columns = [
@@ -153,7 +172,7 @@ export const ContractsPage: React.FC = () => {
       label: 'رقم العقد',
       render: (contract: Contract) => (
         <Link to={`/contracts/${contract.id}`} className="text-blue-600 hover:underline font-medium">
-          {contract.id}
+          {displayContractRef(contract)}
         </Link>
       )
     },
@@ -161,7 +180,7 @@ export const ContractsPage: React.FC = () => {
       key: 'project', 
       label: 'المشروع المرتبط',
       render: (contract: Contract) => {
-        const project = mockProjects.find(p => p.contractId === contract.id);
+        const project = projects.find((p) => p.contractId === contract.id);
         if (project) {
           return (
             <Link to={`/projects/${project.id}`} className="text-blue-600 hover:underline">
@@ -176,11 +195,19 @@ export const ContractsPage: React.FC = () => {
       key: 'request', 
       label: 'الطلب المرتبط',
       render: (contract: Contract) => {
-        const request = mockRequests.find(r => r.id === contract.requestId);
-        if (request) {
+        const reg = requests.find((r) => r.id === contract.requestId);
+        const qo = quickOrders.find((o) => o.id === contract.requestId);
+        if (reg) {
           return (
             <Link to={`/requests/regular/${contract.requestId}`} className="text-blue-600 hover:underline">
-              {request.title}
+              {reg.title}
+            </Link>
+          );
+        }
+        if (qo) {
+          return (
+            <Link to={`/requests/quick/${contract.requestId}`} className="text-blue-600 hover:underline">
+              {qo.title || qo.serviceTitle}
             </Link>
           );
         }
@@ -191,7 +218,7 @@ export const ContractsPage: React.FC = () => {
       key: 'quotation', 
       label: 'العرض المرتبط',
       render: (contract: Contract) => {
-        const quotation = mockQuotations.find(q => q.id === contract.quotationId);
+        const quotation = quotations.find((q) => q.id === contract.quotationId);
         if (quotation) {
           return (
             <Link to={`/quotations/${contract.quotationId}`} className="text-blue-600 hover:underline">
@@ -205,26 +232,29 @@ export const ContractsPage: React.FC = () => {
     { 
       key: 'client', 
       label: 'العميل',
-      render: (contract: Contract) => {
-        const client = mockUsers.find(u => u.id === contract.clientId);
-        return client ? (
-          <Link to={`/users/clients/${client.id}`} className="text-blue-600 hover:underline">
-            {client.name}
+      render: (contract: Contract) =>
+        contract.clientId ? (
+          <Link to={`/users/clients/${contract.clientId}`} className="text-blue-600 hover:underline">
+            {contract.clientName || contract.clientId}
           </Link>
-        ) : contract.clientId;
-      }
+        ) : (
+          '-'
+        )
     },
     { 
       key: 'contractor', 
       label: 'المقاول',
-      render: (contract: Contract) => {
-        const contractor = mockUsers.find(u => u.id === contract.contractorId);
-        return contractor ? (
-          <Link to={`/users/contractors/${contractor.id}`} className="text-blue-600 hover:underline">
-            {contractor.name}
+      render: (contract: Contract) =>
+        contract.contractorId ? (
+          <Link
+            to={`/users/contractors/${contract.contractorId}`}
+            className="text-blue-600 hover:underline"
+          >
+            {contract.contractorName || contract.contractorId}
           </Link>
-        ) : contract.contractorId;
-      }
+        ) : (
+          '-'
+        )
     },
     { 
       key: 'totalPrice', 

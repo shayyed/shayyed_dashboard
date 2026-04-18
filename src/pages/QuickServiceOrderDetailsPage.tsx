@@ -12,8 +12,8 @@ import { ArrowRight, Star, FileText, Image as ImageIcon } from 'lucide-react';
 import { adminApi } from '../services/api';
 import type { QuickServiceOrder, User, Quotation, Invoice } from '../types';
 import { QuickServiceOrderStatus, QuotationStatus, InvoiceStatus } from '../types';
-import { mockUsers, mockQuotations, mockInvoices, mockChatThreads } from '../mock/data';
-import { formatDate, formatCurrency, formatDateTime } from '../utils/formatters';
+import { mockQuotations, mockInvoices, mockChatThreads } from '../mock/data';
+import { formatDate, formatCurrency, formatDateTime, getInvoiceDisplayNumber } from '../utils/formatters';
 
 export const QuickServiceOrderDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -42,60 +42,59 @@ export const QuickServiceOrderDetailsPage: React.FC = () => {
   const [cancelForm, setCancelForm] = useState({ reason: '' });
 
   useEffect(() => {
-    if (id) {
-      loadOrder();
-      loadRelatedData();
-    }
-  }, [id]);
-
-  const loadOrder = async () => {
-    try {
-      setLoading(true);
-      const data = await adminApi.getQuickServiceOrder(id!);
-      if (data) {
-        setOrder(data);
-        setEditForm({
-          title: data.title || '',
-          description: data.description || '',
-          urgency: data.urgency || 'normal',
-          status: data.status,
-        });
-      }
-    } catch (error) {
-      console.error('Load error:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadRelatedData = async () => {
     if (!id) return;
-    try {
-      const orderData = await adminApi.getQuickServiceOrder(id);
-      if (orderData) {
-        const clientData = mockUsers.find(u => u.id === orderData.clientId);
-        setClient(clientData || null);
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        const orderData = await adminApi.getQuickServiceOrder(id);
+        if (cancelled) return;
+        if (orderData) {
+          setOrder(orderData);
+          setEditForm({
+            title: orderData.title || '',
+            description: orderData.description || '',
+            urgency: orderData.urgency || 'normal',
+            status: orderData.status,
+          });
+          if (orderData.clientId) {
+            const profile = await adminApi.getClient(orderData.clientId);
+            if (!cancelled && profile) {
+              setClient({
+                id: profile.id,
+                phone: profile.phone,
+                name: profile.name,
+                email: profile.email,
+                role: profile.role,
+                createdAt: profile.createdAt,
+              });
+            } else if (!cancelled) setClient(null);
+          } else if (!cancelled) setClient(null);
 
-        const orderQuotations = mockQuotations.filter(q => q.requestId === id);
-        setQuotations(orderQuotations);
+          const orderQuotations = mockQuotations.filter((q) => q.requestId === id);
+          if (!cancelled) setQuotations(orderQuotations);
+          const accepted = orderQuotations.find((q) => q.status === QuotationStatus.ACCEPTED);
+          if (!cancelled) setAcceptedQuotation(accepted || null);
 
-        // Find accepted quotation
-        const accepted = orderQuotations.find(q => q.status === QuotationStatus.ACCEPTED);
-        setAcceptedQuotation(accepted || null);
+          const relatedInvoice = mockInvoices.find((i) => i.projectId === id);
+          if (!cancelled) setInvoice(relatedInvoice || null);
 
-        // Find invoice for this quick service order (using projectId field which can store QSO ID)
-        const relatedInvoice = mockInvoices.find(i => i.projectId === id);
-        setInvoice(relatedInvoice || null);
-
-        const thread = mockChatThreads.find(
-          t => t.relatedType === 'request' && t.relatedId === id
-        );
-        setChatThread(thread || null);
+          const thread = mockChatThreads.find((t) => t.relatedType === 'request' && t.relatedId === id);
+          if (!cancelled) setChatThread(thread || null);
+        } else {
+          setOrder(null);
+          setClient(null);
+        }
+      } catch (error) {
+        console.error('Load error:', error);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-    } catch (error) {
-      console.error('Load related data error:', error);
-    }
-  };
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
   const handleUpdate = async () => {
     if (!order) return;
@@ -412,9 +411,9 @@ export const QuickServiceOrderDetailsPage: React.FC = () => {
         <Card title="الدفع / الفاتورة">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <p className="text-sm text-gray-600">معرف الفاتورة</p>
+              <p className="text-sm text-gray-600">رقم الفاتورة</p>
               <Link to={`/invoices/${invoice.id}`} className="text-blue-600 hover:underline">
-                {invoice.id}
+                {getInvoiceDisplayNumber(invoice)}
               </Link>
             </div>
             <div>

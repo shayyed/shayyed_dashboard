@@ -12,7 +12,7 @@ import { adminApi } from '../services/api';
 import type { Invoice } from '../types';
 import { InvoiceStatus } from '../types';
 import { mockUsers, mockProjects, mockContracts, mockQuotations } from '../mock/data';
-import { formatDate, formatCurrency } from '../utils/formatters';
+import { formatDate, formatCurrency, getInvoiceDisplayNumber } from '../utils/formatters';
 
 const TABS = [
   { label: 'الكل', value: 'all' },
@@ -77,8 +77,13 @@ export const InvoicesPage: React.FC = () => {
         const project = mockProjects.find(p => p.id === i.projectId);
         return (
           i.id.toLowerCase().includes(query) ||
+          getInvoiceDisplayNumber(i).toLowerCase().includes(query) ||
           i.title.toLowerCase().includes(query) ||
           (i.description && i.description.toLowerCase().includes(query)) ||
+          (i.clientName && i.clientName.toLowerCase().includes(query)) ||
+          (i.contractorName && i.contractorName.toLowerCase().includes(query)) ||
+          (i.milestoneLabel && i.milestoneLabel.toLowerCase().includes(query)) ||
+          (i.projectTitle && i.projectTitle.toLowerCase().includes(query)) ||
           (client && client.name.toLowerCase().includes(query)) ||
           (contractor && contractor.name.toLowerCase().includes(query)) ||
           (project && project.title.toLowerCase().includes(query))
@@ -185,7 +190,7 @@ export const InvoicesPage: React.FC = () => {
       label: 'رقم الفاتورة',
       render: (invoice: Invoice) => (
         <Link to={`/invoices/${invoice.id}`} className="text-blue-600 hover:underline">
-          {invoice.id}
+          {getInvoiceDisplayNumber(invoice)}
         </Link>
       ),
     },
@@ -202,6 +207,20 @@ export const InvoicesPage: React.FC = () => {
       key: 'milestone',
       label: 'الدفعة المرتبطة',
       render: (invoice: Invoice) => {
+        const apiLabel = invoice.milestoneLabel?.trim();
+        if (apiLabel) {
+          return invoice.milestoneId ? (
+            <Link to={`/milestones/${invoice.milestoneId}`} className="text-blue-600 hover:underline">
+              {apiLabel}
+            </Link>
+          ) : (
+            <span className="text-[#111111]">{apiLabel}</span>
+          );
+        }
+        if (invoice.projectTitle?.trim()) {
+          return <span className="text-gray-600">{invoice.projectTitle}</span>;
+        }
+
         // Check if it's a quick service order (projectId starts with QSO-)
         const isQuickService = invoice.projectId && invoice.projectId.startsWith('QSO-');
         
@@ -248,13 +267,17 @@ export const InvoicesPage: React.FC = () => {
       key: 'contractor',
       label: 'المقاول',
       render: (invoice: Invoice) => {
-        const contractor = mockUsers.find(u => u.id === invoice.contractorId);
-        return contractor ? (
-          <Link to={`/users/contractors/${contractor.id}`} className="text-blue-600 hover:underline">
-            {contractor.name}
+        const name =
+          invoice.contractorName?.trim() ||
+          mockUsers.find((u) => u.id === invoice.contractorId)?.name;
+        if (!name) return <span className="text-gray-400">-</span>;
+        return (
+          <Link
+            to={`/users/contractors/${invoice.contractorId}`}
+            className="text-blue-600 hover:underline"
+          >
+            {name}
           </Link>
-        ) : (
-          <span className="text-gray-400">-</span>
         );
       },
     },
@@ -262,13 +285,13 @@ export const InvoicesPage: React.FC = () => {
       key: 'client',
       label: 'العميل',
       render: (invoice: Invoice) => {
-        const client = mockUsers.find(u => u.id === invoice.clientId);
-        return client ? (
-          <Link to={`/users/clients/${client.id}`} className="text-blue-600 hover:underline">
-            {client.name}
+        const name =
+          invoice.clientName?.trim() || mockUsers.find((u) => u.id === invoice.clientId)?.name;
+        if (!name) return <span className="text-gray-400">-</span>;
+        return (
+          <Link to={`/users/clients/${invoice.clientId}`} className="text-blue-600 hover:underline">
+            {name}
           </Link>
-        ) : (
-          <span className="text-gray-400">-</span>
         );
       },
     },

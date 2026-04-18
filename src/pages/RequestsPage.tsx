@@ -12,7 +12,6 @@ import { adminApi } from '../services/api';
 import type { ServiceRequest, QuickServiceOrder } from '../types';
 import { RequestStatus, QuickServiceOrderStatus } from '../types';
 import { formatDate, formatSar } from '../utils/formatters';
-import { mockUsers, mockQuotations } from '../mock/data';
 
 const TYPE_TABS = [
   { label: 'المناقصات', value: 'regular' },
@@ -94,11 +93,6 @@ export const RequestsPage: React.FC = () => {
     }
   };
 
-  // حساب عدد العروض للطلبات العادية
-  const getOffersCount = (requestId: string) => {
-    return mockQuotations.filter(q => q.requestId === requestId).length;
-  };
-
   // Get unique values for filters - Regular Requests
   const uniqueServiceTypes = useMemo(() => {
     const services = new Set<string>();
@@ -169,7 +163,8 @@ export const RequestsPage: React.FC = () => {
         r.title.toLowerCase().includes(searchLower) ||
         r.description.toLowerCase().includes(searchLower) ||
         r.serviceName.toLowerCase().includes(searchLower) ||
-        (mockUsers.find(u => u.id === r.clientId)?.name || '').toLowerCase().includes(searchLower)
+        (r.clientName || '').toLowerCase().includes(searchLower) ||
+        r.clientId.toLowerCase().includes(searchLower)
       );
     }
     
@@ -252,7 +247,8 @@ export const RequestsPage: React.FC = () => {
         (q.title || '').toLowerCase().includes(searchLower) ||
         (q.description || '').toLowerCase().includes(searchLower) ||
         q.serviceTitle.toLowerCase().includes(searchLower) ||
-        (mockUsers.find(u => u.id === q.clientId)?.name || '').toLowerCase().includes(searchLower)
+        (q.clientName || '').toLowerCase().includes(searchLower) ||
+        q.clientId.toLowerCase().includes(searchLower)
       );
     }
     
@@ -306,20 +302,21 @@ export const RequestsPage: React.FC = () => {
     { 
       key: 'client', 
       label: 'العميل',
-      render: (request: ServiceRequest) => {
-        const client = mockUsers.find(u => u.id === request.clientId);
-        return client ? (
-          <Link to={`/users/clients/${client.id}`} className="text-blue-600 hover:underline">
-            {client.name}
+      render: (request: ServiceRequest) =>
+        request.clientId ? (
+          <Link to={`/users/clients/${request.clientId}`} className="text-blue-600 hover:underline">
+            {request.clientName || request.clientId}
           </Link>
-        ) : '-';
-      }
+        ) : (
+          '-'
+        )
     },
     { key: 'serviceName', label: 'اسم الخدمة' },
     { 
       key: 'location', 
       label: 'الموقع',
-      render: (request: ServiceRequest) => `${request.location.city}، ${request.location.district}`
+      render: (request: ServiceRequest) =>
+        [request.location?.city, request.location?.district].filter(Boolean).join('، ') || '—'
     },
     // نطاق الميزانية - hidden for now
     // { key: 'budgetRange', label: 'الميزانية' },
@@ -332,12 +329,14 @@ export const RequestsPage: React.FC = () => {
       key: 'offersCount', 
       label: 'عدد العروض',
       render: (request: ServiceRequest) => {
-        const count = getOffersCount(request.id);
+        const count = request.offersCount ?? 0;
         return count > 0 ? (
           <Link to={`/requests/regular/${request.id}`} className="text-blue-600 hover:underline">
             {count} عرض
           </Link>
-        ) : '0';
+        ) : (
+          '0'
+        );
       }
     },
     { 
@@ -393,20 +392,21 @@ export const RequestsPage: React.FC = () => {
     { 
       key: 'client', 
       label: 'العميل',
-      render: (order: QuickServiceOrder) => {
-        const client = mockUsers.find(u => u.id === order.clientId);
-        return client ? (
-          <Link to={`/users/clients/${client.id}`} className="text-blue-600 hover:underline">
-            {client.name}
+      render: (order: QuickServiceOrder) =>
+        order.clientId ? (
+          <Link to={`/users/clients/${order.clientId}`} className="text-blue-600 hover:underline">
+            {order.clientName || order.clientId}
           </Link>
-        ) : '-';
-      }
+        ) : (
+          '-'
+        )
     },
     { key: 'serviceTitle', label: 'اسم الخدمة' },
     { 
       key: 'location', 
       label: 'الموقع',
-      render: (order: QuickServiceOrder) => `${order.location.city}، ${order.location.district}`
+      render: (order: QuickServiceOrder) =>
+        [order.location?.city, order.location?.district].filter(Boolean).join('، ') || '—'
     },
     { 
       key: 'status', 

@@ -11,8 +11,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { adminApi } from '../services/api';
 import type { SupportTicket } from '../types';
 import { UserRole } from '../types';
-import { mockUsers } from '../mock/data';
-import { formatDate, formatDateTime } from '../utils/formatters';
+import { formatDate } from '../utils/formatters';
 
 const STATUS_TABS = [
   { label: 'الكل', value: 'all' },
@@ -20,10 +19,14 @@ const STATUS_TABS = [
   { label: 'بانتظار الرد', value: 'awaiting_reply' },
 ];
 
-// Helper function to determine reply status
-const getTicketReplyStatus = (ticket: SupportTicket): 'replied' | 'awaiting_reply' => {
-  return (ticket.replies && ticket.replies.length > 0) ? 'replied' : 'awaiting_reply';
-};
+function ticketHasAdminReply(ticket: SupportTicket): boolean {
+  if (ticket.replies?.some((rep) => (rep.content || '').trim().length > 0)) return true;
+  if (ticket.status === 'closed') return true;
+  return false;
+}
+
+const getTicketReplyStatus = (ticket: SupportTicket): 'replied' | 'awaiting_reply' =>
+  ticketHasAdminReply(ticket) ? 'replied' : 'awaiting_reply';
 
 const ROLE_LABELS: Record<UserRole, string> = {
   CLIENT: 'عميل',
@@ -46,7 +49,7 @@ export const SupportTicketsPage: React.FC = () => {
 
   useEffect(() => {
     loadTickets();
-  }, [activeStatusTab]);
+  }, []);
 
   const loadTickets = async () => {
     try {
@@ -63,23 +66,23 @@ export const SupportTicketsPage: React.FC = () => {
   const filteredTickets = useMemo(() => {
     let filtered = tickets;
 
-    // Status tab filter - فلترة حسب وجود الردود
+    // Status tab filter — client-side only (do not refetch on tab change)
     if (activeStatusTab === 'replied') {
-      filtered = filtered.filter(ticket => ticket.replies && ticket.replies.length > 0);
+      filtered = filtered.filter((ticket) => ticketHasAdminReply(ticket));
     } else if (activeStatusTab === 'awaiting_reply') {
-      filtered = filtered.filter(ticket => !ticket.replies || ticket.replies.length === 0);
+      filtered = filtered.filter((ticket) => !ticketHasAdminReply(ticket));
     }
 
     // Search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(ticket => {
-        const user = mockUsers.find(u => u.id === ticket.userId);
+      filtered = filtered.filter((ticket) => {
+        const un = (ticket.userName || '').toLowerCase();
         return (
           ticket.id.toLowerCase().includes(query) ||
           ticket.title.toLowerCase().includes(query) ||
           ticket.description.toLowerCase().includes(query) ||
-          (user && user.name.toLowerCase().includes(query))
+          un.includes(query)
         );
       });
     }
@@ -148,19 +151,24 @@ export const SupportTicketsPage: React.FC = () => {
     {
       key: 'user',
       label: 'المستخدم',
-      render: (ticket: SupportTicket) => {
-        const user = mockUsers.find(u => u.id === ticket.userId);
-        return user ? (
+      render: (ticket: SupportTicket) =>
+        ticket.userId && (ticket.userName || '').trim() ? (
           <Link
-            to={`/users/${ticket.role === UserRole.CLIENT ? 'clients' : 'contractors'}/${user.id}`}
+            to={`/users/${ticket.role === UserRole.CLIENT ? 'clients' : 'contractors'}/${ticket.userId}`}
             className="text-blue-600 hover:underline"
           >
-            {user.name}
+            {ticket.userName}
+          </Link>
+        ) : ticket.userId ? (
+          <Link
+            to={`/users/${ticket.role === UserRole.CLIENT ? 'clients' : 'contractors'}/${ticket.userId}`}
+            className="text-blue-600 hover:underline"
+          >
+            مستخدم
           </Link>
         ) : (
           <span className="text-gray-400">-</span>
-        );
-      },
+        ),
     },
     {
       key: 'role',

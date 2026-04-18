@@ -7,10 +7,19 @@ import { EmptyState } from '../components/EmptyState';
 import { Button } from '../components/Button';
 import { ArrowRight, Check, Paperclip, FileText, Image as ImageIcon } from 'lucide-react';
 import { adminApi } from '../services/api';
-import type { Project, ProjectReport, Invoice, Complaint, ContractorProfile } from '../types';
+import type {
+  Project,
+  ProjectReport,
+  Invoice,
+  Complaint,
+  ContractorProfile,
+  Contract,
+  ServiceRequest,
+  Quotation,
+  ClientProfile,
+} from '../types';
 import { ProjectStatus, ComplaintStatus, ComplaintType, InvoiceStatus } from '../types';
-import { mockUsers, mockContractors, mockContracts, mockRequests, mockQuotations, mockInvoices, mockComplaints, mockProjectReports } from '../mock/data';
-import { formatDate, formatSar, formatDateTime } from '../utils/formatters';
+import { formatDate, formatSar, formatDateTime, getInvoiceDisplayNumber } from '../utils/formatters';
 
 const TABS = [
   { label: 'نظرة عامة', value: 'overview' },
@@ -29,37 +38,50 @@ export const ProjectDetailsPage: React.FC = () => {
   const [reports, setReports] = useState<ProjectReport[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [complaints, setComplaints] = useState<Complaint[]>([]);
+  const [contract, setContract] = useState<Contract | null>(null);
+  const [request, setRequest] = useState<ServiceRequest | null>(null);
+  const [quotation, setQuotation] = useState<Quotation | null>(null);
+  const [client, setClient] = useState<ClientProfile | null>(null);
+  const [contractor, setContractor] = useState<ContractorProfile | null>(null);
 
   useEffect(() => {
     if (id) {
       loadProject();
-      loadRelatedData();
     }
   }, [id]);
 
   const loadProject = async () => {
+    if (!id) return;
     try {
       setLoading(true);
-      const data = await adminApi.getProject(id!);
-      if (data) {
-        setProject(data);
-      }
+      const data = await adminApi.getProject(id);
+      setProject(data);
+      if (!data) return;
+      const [rep, allInv, allComp, co, reqs, qots, cu, con] = await Promise.all([
+        adminApi.listProjectReports(id),
+        adminApi.listInvoices(),
+        adminApi.listComplaints(),
+        data.contractId ? adminApi.getContract(data.contractId) : Promise.resolve(null),
+        adminApi.listRequests(),
+        adminApi.listQuotations(),
+        adminApi.getClient(data.clientId),
+        adminApi.getContractor(data.contractorId),
+      ]);
+      setReports(rep);
+      setInvoices(allInv.filter((i) => i.projectId === id));
+      setComplaints(allComp.filter((c) => c.projectId === id));
+      setContract(co);
+      setRequest(reqs.find((r) => r.id === data.requestId) || null);
+      setQuotation(
+        qots.find((q) => q.requestId === data.requestId && q.status === 'ACCEPTED') || null
+      );
+      setClient(cu);
+      setContractor(con);
     } catch (error) {
       console.error('Load error:', error);
     } finally {
       setLoading(false);
     }
-  };
-
-  const loadRelatedData = () => {
-    if (!id) return;
-    const projectReports = mockProjectReports.filter(r => r.projectId === id);
-    const projectInvoices = mockInvoices.filter(i => i.projectId === id);
-    const projectComplaints = mockComplaints.filter(c => c.projectId === id);
-    
-    setReports(projectReports);
-    setInvoices(projectInvoices);
-    setComplaints(projectComplaints);
   };
 
   if (loading) {
@@ -77,12 +99,6 @@ export const ProjectDetailsPage: React.FC = () => {
       </div>
     );
   }
-
-  const contract = mockContracts.find(c => c.id === project.contractId);
-  const request = mockRequests.find(r => r.id === project.requestId);
-  const quotation = request ? mockQuotations.find(q => q.requestId === request.id && q.status === 'ACCEPTED') : null;
-  const client = mockUsers.find(u => u.id === project.clientId);
-  const contractor = mockContractors.find(c => c.id === project.contractorId);
 
   const hexToRgba = (hex: string, alpha: number): string => {
     const r = parseInt(hex.slice(1, 3), 16);
@@ -235,7 +251,7 @@ export const ProjectDetailsPage: React.FC = () => {
                 <div className="space-y-3">
                   <div className="flex items-start gap-4">
                     <span className="text-[#666666] min-w-[140px]">رقم العقد:</span>
-                    <span className="text-[#111111]">{contract.id}</span>
+                    <span className="text-[#111111]">{contract.contractNumber || contract.id}</span>
                   </div>
                   <div className="flex items-start gap-4">
                     <span className="text-[#666666] min-w-[140px]">القيمة الإجمالية:</span>
@@ -587,7 +603,9 @@ export const ProjectDetailsPage: React.FC = () => {
                     <div className="flex items-start justify-between mb-4">
                       <div className="flex-1">
                         <h4 className="text-[#111111] font-medium mb-1">{invoice.title}</h4>
-                        <p className="text-sm text-[#666666]">رقم الفاتورة: {invoice.id}</p>
+                        <p className="text-sm text-[#666666]">
+                          رقم الفاتورة: {getInvoiceDisplayNumber(invoice)}
+                        </p>
                       </div>
                       <span 
                         className="text-xs px-2 py-1 rounded"
@@ -682,11 +700,12 @@ export const ProjectDetailsPage: React.FC = () => {
                   complaint.type === ComplaintType.SCOPE ? 'نطاق العمل' :
                   complaint.type === ComplaintType.PAYMENT ? 'فواتير/دفع' : 'أخرى';
 
-                // Get requester details
-                const requesterId = complaint.raisedBy === 'CLIENT' ? complaint.clientId : complaint.contractorId;
-                const requester = complaint.raisedBy === 'CLIENT' 
-                  ? mockUsers.find(u => u.id === requesterId)
-                  : mockContractors.find(c => c.id === requesterId);
+                const requesterName =
+                  complaint.raisedBy === 'CLIENT'
+                    ? complaint.clientName || complaint.clientId
+                    : complaint.contractorName || complaint.contractorId;
+                const requesterPhone =
+                  complaint.raisedBy === 'CLIENT' ? client?.phone : contractor?.phone;
                 const requesterTypeText = complaint.raisedBy === 'CLIENT' ? 'العميل' : 'المقاول';
 
                 return (
@@ -705,16 +724,18 @@ export const ProjectDetailsPage: React.FC = () => {
                     </div>
 
                     {/* Requester Information */}
-                    {requester && (
+                    {requesterName && (
                       <div className="space-y-2 mb-4 pb-4 border-b border-[#E5E5E5]">
                         <div className="flex items-center gap-2">
                           <span className="text-sm text-[#666666]">مقدم الطلب:</span>
-                          <span className="text-sm text-[#111111] font-medium">{requester.name}</span>
+                          <span className="text-sm text-[#111111] font-medium">{requesterName}</span>
                         </div>
+                        {requesterPhone ? (
                         <div className="flex items-center gap-2">
                           <span className="text-sm text-[#666666]">رقم الجوال:</span>
-                          <span className="text-sm text-[#111111]">{requester.phone}</span>
+                          <span className="text-sm text-[#111111]">{requesterPhone}</span>
                         </div>
+                        ) : null}
                         <div className="flex items-center gap-2">
                           <span className="text-sm text-[#666666]">نوع مقدم الطلب:</span>
                           <span className="text-sm text-[#111111] font-medium">{requesterTypeText}</span>
@@ -756,12 +777,21 @@ export const ProjectDetailsPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Button variant="secondary" onClick={() => navigate('/projects')}>
-          <ArrowRight className="w-4 h-4 ml-2" />
-          العودة
-        </Button>
-        <h1 className="text-2xl font-semibold text-[#111111]">تفاصيل المشروع</h1>
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-4">
+          <Button variant="secondary" onClick={() => navigate('/projects')}>
+            <ArrowRight className="w-4 h-4 ml-2" />
+            العودة
+          </Button>
+          <h1 className="text-2xl font-semibold text-[#111111]">تفاصيل المشروع</h1>
+        </div>
+        <p className="text-sm text-[#666666] mr-4">
+          رقم المشروع:{' '}
+          <span className="font-medium text-[#111111]">{project.projectNumber || project.id}</span>
+          {project.projectNumber && project.projectNumber !== project.id && (
+            <span className="text-xs text-[#999999] mr-2">(معرّف النظام: {project.id})</span>
+          )}
+        </p>
       </div>
 
       {/* Tabs */}

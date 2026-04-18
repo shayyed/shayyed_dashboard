@@ -7,8 +7,7 @@ import { ExportButton } from '../components/ExportButton';
 import { Button } from '../components/Button';
 import { EmptyState } from '../components/EmptyState';
 import { adminApi } from '../services/api';
-import type { Milestone } from '../types';
-import { mockContracts, mockProjects, mockInvoices, mockPayments, mockRequests } from '../mock/data';
+import type { Milestone, QuickServiceOrder, ServiceRequest } from '../types';
 import { formatDate, formatDateTime, formatSar } from '../utils/formatters';
 
 const MILESTONE_STATUS_LABELS: Record<'NotDue' | 'Due' | 'Paid', string> = {
@@ -23,31 +22,34 @@ const MILESTONE_STATUS_COLORS: Record<'NotDue' | 'Due' | 'Paid', string> = {
   Paid: 'bg-[#05C4AF]/10 text-[#05C4AF]',
 };
 
-// Helper function to get all milestones with contract and project info
-const getAllMilestonesWithRelations = (): Array<Milestone & { contractId: string; projectId?: string }> => {
-  const allMilestones: Array<Milestone & { contractId: string; projectId?: string }> = [];
-  
-  mockContracts.forEach(contract => {
-    const project = mockProjects.find(p => p.contractId === contract.id);
-    contract.milestones.forEach(milestone => {
-      allMilestones.push({
-        ...milestone,
-        contractId: contract.id,
-        projectId: project?.id,
-      });
-    });
-  });
-  
-  return allMilestones;
-};
+export type MilestoneRow = Milestone & { contractId: string; requestId?: string };
+
+function resolveRequestLink(
+  requestId: string | undefined,
+  requests: ServiceRequest[],
+  quickOrders: QuickServiceOrder[]
+): { title: string; to: string } | null {
+  if (!requestId || !requestId.trim()) return null;
+  const rid = requestId.trim();
+  const reg = requests.find((r) => r.id === rid);
+  if (reg) return { title: reg.title, to: `/requests/regular/${reg.id}` };
+  const q = quickOrders.find((o) => o.id === rid);
+  if (q) {
+    const title = (q.title && q.title.trim()) || q.serviceTitle || rid;
+    return { title, to: `/requests/quick/${q.id}` };
+  }
+  return null;
+}
 
 export const MilestonesPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
-  const [milestones, setMilestones] = useState<Array<Milestone & { contractId: string; projectId?: string }>>([]);
+  const [milestones, setMilestones] = useState<MilestoneRow[]>([]);
+  const [requestsList, setRequestsList] = useState<ServiceRequest[]>([]);
+  const [quickOrdersList, setQuickOrdersList] = useState<QuickServiceOrder[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState({
     status: '',
-    projectId: '',
+    requestId: '',
     amountMin: '',
     amountMax: '',
     dueDateFrom: '',
@@ -58,14 +60,30 @@ export const MilestonesPage: React.FC = () => {
   const [showFilters, setShowFilters] = useState(false);
 
   useEffect(() => {
-    loadMilestones();
+    void loadMilestones();
   }, []);
 
   const loadMilestones = async () => {
     try {
       setLoading(true);
-      // Get all milestones from contracts
-      const allMilestones = getAllMilestonesWithRelations();
+      const [contracts, requests, quickOrders] = await Promise.all([
+        adminApi.listContracts(),
+        adminApi.listRequests(),
+        adminApi.listQuickServiceOrders(),
+      ]);
+      setRequestsList(requests);
+      setQuickOrdersList(quickOrders);
+      const allMilestones: MilestoneRow[] = [];
+      for (const contract of contracts) {
+        const rid = contract.requestId?.trim() || undefined;
+        for (const milestone of contract.milestones) {
+          allMilestones.push({
+            ...milestone,
+            contractId: contract.id,
+            requestId: rid,
+          });
+        }
+      }
       setMilestones(allMilestones);
     } catch (error) {
       console.error('Load error:', error);
@@ -77,90 +95,81 @@ export const MilestonesPage: React.FC = () => {
   const filteredMilestones = useMemo(() => {
     let filtered = milestones;
 
-    // Search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(milestone => {
-        const contract = mockContracts.find(c => c.id === milestone.contractId);
-        const project = milestone.projectId ? mockProjects.find(p => p.id === milestone.projectId) : null;
-        const request = project ? mockRequests.find(r => r.id === project.requestId) : null;
+      filtered = filtered.filter((milestone) => {
+        const req = resolveRequestLink(milestone.requestId, requestsList, quickOrdersList);
         return (
           milestone.id.toLowerCase().includes(query) ||
           milestone.name.toLowerCase().includes(query) ||
           (milestone.description && milestone.description.toLowerCase().includes(query)) ||
-          (contract && contract.id.toLowerCase().includes(query)) ||
-          (request && request.title.toLowerCase().includes(query))
+          milestone.contractId.toLowerCase().includes(query) ||
+          (req && req.title.toLowerCase().includes(query))
         );
       });
     }
 
-    // Status filter
     if (filters.status) {
-      filtered = filtered.filter(milestone => milestone.status === filters.status);
+      filtered = filtered.filter((milestone) => milestone.status === filters.status);
     }
 
-    // Request filter - البحث في الطلبات المرتبطة
-    if (filters.projectId) {
-      filtered = filtered.filter(milestone => {
-        if (!milestone.projectId) return false;
-        const project = mockProjects.find(p => p.id === milestone.projectId);
-        if (!project) return false;
-        return project.requestId === filters.projectId;
-      });
+    if (filters.requestId) {
+      filtered = filtered.filter((milestone) => milestone.requestId === filters.requestId);
     }
 
-    // Amount range filter
     if (filters.amountMin) {
-      filtered = filtered.filter(milestone => milestone.amount >= Number(filters.amountMin));
+      filtered = filtered.filter((milestone) => milestone.amount >= Number(filters.amountMin));
     }
     if (filters.amountMax) {
-      filtered = filtered.filter(milestone => milestone.amount <= Number(filters.amountMax));
+      filtered = filtered.filter((milestone) => milestone.amount <= Number(filters.amountMax));
     }
 
-    // Due date range filter
     if (filters.dueDateFrom) {
-      filtered = filtered.filter(milestone => milestone.dueDate && milestone.dueDate >= filters.dueDateFrom);
+      filtered = filtered.filter(
+        (milestone) => milestone.dueDate && milestone.dueDate >= filters.dueDateFrom
+      );
     }
     if (filters.dueDateTo) {
-      filtered = filtered.filter(milestone => milestone.dueDate && milestone.dueDate <= filters.dueDateTo);
+      filtered = filtered.filter(
+        (milestone) => milestone.dueDate && milestone.dueDate <= filters.dueDateTo
+      );
     }
 
-    // Paid date range filter (only for Paid milestones)
     if (filters.paidDateFrom) {
-      filtered = filtered.filter(milestone => milestone.paidAt && milestone.paidAt >= filters.paidDateFrom);
+      filtered = filtered.filter(
+        (milestone) => milestone.paidAt && milestone.paidAt >= filters.paidDateFrom
+      );
     }
     if (filters.paidDateTo) {
-      filtered = filtered.filter(milestone => milestone.paidAt && milestone.paidAt <= filters.paidDateTo);
+      filtered = filtered.filter(
+        (milestone) => milestone.paidAt && milestone.paidAt <= filters.paidDateTo
+      );
     }
 
     return filtered;
-  }, [milestones, searchQuery, filters]);
+  }, [milestones, searchQuery, filters, requestsList, quickOrdersList]);
 
   const handleExport = () => {
-    // TODO: Implement export functionality
     console.log('Export milestones:', filteredMilestones);
   };
 
-  // Generate unique options for searchable selects
   const uniqueRequests = useMemo(() => {
-    const requests = milestones
-      .map(milestone => {
-        if (!milestone.projectId) return null;
-        const project = mockProjects.find(p => p.id === milestone.projectId);
-        if (!project) return null;
-        const request = mockRequests.find(r => r.id === project.requestId);
-        return request ? { label: `${request.id} - ${request.title}`, value: request.id } : null;
-      })
-      .filter((r): r is { label: string; value: string } => r !== null);
-    
-    const unique = Array.from(new Map(requests.map(r => [r.value, r])).values());
-    return unique.sort((a, b) => a.label.localeCompare(b.label));
-  }, [milestones]);
+    const seen = new Map<string, string>();
+    for (const m of milestones) {
+      if (!m.requestId) continue;
+      if (seen.has(m.requestId)) continue;
+      const meta = resolveRequestLink(m.requestId, requestsList, quickOrdersList);
+      seen.set(m.requestId, meta ? `${m.requestId.slice(-8)} — ${meta.title}` : m.requestId);
+    }
+    return [...seen.entries()]
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'ar'));
+  }, [milestones, requestsList, quickOrdersList]);
 
   const resetFilters = () => {
     setFilters({
       status: '',
-      projectId: '',
+      requestId: '',
       amountMin: '',
       amountMax: '',
       dueDateFrom: '',
@@ -171,12 +180,11 @@ export const MilestonesPage: React.FC = () => {
     setSearchQuery('');
   };
 
-
   const columns = [
     {
       key: 'name',
       label: 'اسم الدفعة',
-      render: (milestone: Milestone & { contractId: string; projectId?: string }) => (
+      render: (milestone: MilestoneRow) => (
         <Link
           to={`/milestones/${milestone.id}`}
           className="text-blue-600 hover:underline font-medium"
@@ -188,19 +196,11 @@ export const MilestonesPage: React.FC = () => {
     {
       key: 'request',
       label: 'عنوان الطلب',
-      render: (milestone: Milestone & { contractId: string; projectId?: string }) => {
-        if (!milestone.projectId) {
-          return <span className="text-gray-400">-</span>;
-        }
-        const project = mockProjects.find(p => p.id === milestone.projectId);
-        if (!project) return <span className="text-gray-400">-</span>;
-        const request = mockRequests.find(r => r.id === project.requestId);
-        return request ? (
-          <Link
-            to={`/requests/regular/${request.id}`}
-            className="text-blue-600 hover:underline"
-          >
-            {request.title}
+      render: (milestone: MilestoneRow) => {
+        const meta = resolveRequestLink(milestone.requestId, requestsList, quickOrdersList);
+        return meta ? (
+          <Link to={meta.to} className="text-blue-600 hover:underline">
+            {meta.title}
           </Link>
         ) : (
           <span className="text-gray-400">-</span>
@@ -216,7 +216,9 @@ export const MilestonesPage: React.FC = () => {
       key: 'status',
       label: 'الحالة',
       render: (milestone: Milestone) => (
-        <span className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full ${MILESTONE_STATUS_COLORS[milestone.status]}`}>
+        <span
+          className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full ${MILESTONE_STATUS_COLORS[milestone.status]}`}
+        >
           {MILESTONE_STATUS_LABELS[milestone.status]}
         </span>
       ),
@@ -224,17 +226,19 @@ export const MilestonesPage: React.FC = () => {
     {
       key: 'dueDate',
       label: 'تاريخ الاستحقاق',
-      render: (milestone: Milestone) => milestone.dueDate ? formatDate(milestone.dueDate) : '-',
+      render: (milestone: Milestone) =>
+        milestone.dueDate ? formatDate(milestone.dueDate) : '-',
     },
     {
       key: 'paidAt',
       label: 'تاريخ الدفع',
-      render: (milestone: Milestone) => milestone.paidAt ? formatDateTime(milestone.paidAt) : '-',
+      render: (milestone: Milestone) =>
+        milestone.paidAt ? formatDateTime(milestone.paidAt) : '-',
     },
     {
       key: 'actions',
       label: 'إجراءات',
-      render: (milestone: Milestone & { contractId: string; projectId?: string }) => (
+      render: (milestone: MilestoneRow) => (
         <Link to={`/milestones/${milestone.id}`}>
           <Button variant="secondary">عرض التفاصيل</Button>
         </Link>
@@ -275,11 +279,11 @@ export const MilestonesPage: React.FC = () => {
           },
           {
             type: 'searchable-select',
-            key: 'projectId',
+            key: 'requestId',
             label: 'الطلب',
             options: uniqueRequests,
-            value: filters.projectId,
-            onChange: (value) => setFilters({ ...filters, projectId: value }),
+            value: filters.requestId,
+            onChange: (value) => setFilters({ ...filters, requestId: value }),
           },
           {
             type: 'number',

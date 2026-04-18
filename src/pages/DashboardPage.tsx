@@ -1,99 +1,86 @@
 import React from 'react';
 import { Card } from '../components/Card';
-import { adminApi } from '../services/api';
+import { adminApi, type AdminDashboardSummary } from '../services/api';
 import { formatSar, formatDate } from '../utils/formatters';
 import { StatusBadge } from '../components/StatusBadge';
 import { Link } from 'react-router-dom';
 import { Users, ClipboardList, Receipt, AlertTriangle, Ticket } from 'lucide-react';
 
-export const DashboardPage: React.FC = () => {
-  const [stats, setStats] = React.useState({
-    totalUsers: 0,
-    totalClients: 0,
-    totalContractors: 0,
-    totalRequests: 0,
-    totalRegularRequests: 0,
-    totalQuickServiceOrders: 0,
-    totalAcceptedRequests: 0,
-    totalPaidInvoices: 0,
-    totalPendingInvoices: 0,
-    totalOpenComplaints: 0,
-    totalOpenSupportTickets: 0,
-  });
+const AR_MONTHS = [
+  'يناير',
+  'فبراير',
+  'مارس',
+  'أبريل',
+  'مايو',
+  'يونيو',
+  'يوليو',
+  'أغسطس',
+  'سبتمبر',
+  'أكتوبر',
+  'نوفمبر',
+  'ديسمبر',
+];
 
-  const [recentRequests, setRecentRequests] = React.useState<any[]>([]);
-  const [recentComplaints, setRecentComplaints] = React.useState<any[]>([]);
-  const [recentSupportTickets, setRecentSupportTickets] = React.useState<any[]>([]);
-  const [recentInvoices, setRecentInvoices] = React.useState<any[]>([]);
+function formatYearMonthAr(ym: string): string {
+  const [y, m] = ym.split('-').map(Number);
+  if (!y || !m || m < 1 || m > 12) return ym;
+  return `${AR_MONTHS[m - 1]} ${y}`;
+}
+
+const emptySummary: AdminDashboardSummary = {
+  users: { totalClients: 0, totalContractors: 0, total: 0 },
+  requests: { regularTotal: 0, quickTotal: 0, total: 0, acceptedApprox: 0 },
+  requestStatusCombined: { draft: 0, submitted: 0, accepted: 0, completed: 0, cancelled: 0 },
+  invoices: { paid: 0, pending: 0, total: 0 },
+  complaints: { open: 0 },
+  supportTickets: { open: 0 },
+  charts: { requestsByMonth: [], revenueByMonth: [] },
+  recent: { requests: [], complaints: [], supportTickets: [], paidInvoices: [] },
+};
+
+export const DashboardPage: React.FC = () => {
+  const [loading, setLoading] = React.useState(true);
+  const [data, setData] = React.useState<AdminDashboardSummary>(emptySummary);
 
   React.useEffect(() => {
-    loadStats();
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        const summary = await adminApi.getDashboardSummary();
+        if (!cancelled) setData(summary ?? emptySummary);
+      } catch {
+        if (!cancelled) setData(emptySummary);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const loadStats = async () => {
-    const [users, requests, quickOrders, invoices, complaints, supportTickets] = await Promise.all([
-      adminApi.listUsers(),
-      adminApi.listRequests(),
-      adminApi.listQuickServiceOrders(),
-      adminApi.listInvoices(),
-      adminApi.listComplaints(),
-      adminApi.listSupportTickets(),
-    ]);
+  const maxRequestsMonth = Math.max(1, ...data.charts.requestsByMonth.map((x) => x.count));
+  const maxRevenueMonth = Math.max(1, ...data.charts.revenueByMonth.map((x) => x.totalSar));
 
-    const clients = users.filter((u) => u.role === 'CLIENT');
-    const contractors = users.filter((u) => u.role === 'CONTRACTOR');
-    const acceptedRequests = requests.filter((r) => r.status === 'ACCEPTED');
-    const paidInvoices = invoices.filter((inv) => inv.status === 'PAID');
-    const pendingInvoices = invoices.filter(
-      (inv) => inv.status === 'SENT' || inv.status === 'APPROVED'
+  const statusRows = [
+    { label: 'مسودة', count: data.requestStatusCombined.draft, color: 'bg-gray-500' },
+    { label: 'مرسلة', count: data.requestStatusCombined.submitted, color: 'bg-blue-500' },
+    { label: 'مقبولة', count: data.requestStatusCombined.accepted, color: 'bg-[#05C4AF]' },
+    { label: 'مكتملة', count: data.requestStatusCombined.completed, color: 'bg-emerald-600' },
+    { label: 'ملغاة', count: data.requestStatusCombined.cancelled, color: 'bg-[#D34D72]' },
+  ];
+
+  if (loading) {
+    return (
+      <div
+        className="min-h-[320px] flex items-center justify-center bg-white text-[#666666] text-sm"
+        dir="rtl"
+      >
+        جاري تحميل لوحة التحكم…
+      </div>
     );
-    const openComplaints = complaints.filter((c) => c.status === 'OPEN' || c.status === 'IN_REVIEW');
-    const openSupportTickets = supportTickets.filter((t) => t.status === 'open' || t.status === 'in_progress');
-
-    setStats({
-      totalUsers: users.length,
-      totalClients: clients.length,
-      totalContractors: contractors.length,
-      totalRequests: requests.length + quickOrders.length,
-      totalRegularRequests: requests.length,
-      totalQuickServiceOrders: quickOrders.length,
-      totalAcceptedRequests: acceptedRequests.length,
-      totalPaidInvoices: paidInvoices.length,
-      totalPendingInvoices: pendingInvoices.length,
-      totalOpenComplaints: openComplaints.length,
-      totalOpenSupportTickets: openSupportTickets.length,
-    });
-
-    // آخر 5 طلبات
-    const allRequests = [
-      ...requests.map((r) => ({ ...r, type: 'regular' })),
-      ...quickOrders.map((q) => ({ ...q, type: 'quick' })),
-    ];
-    setRecentRequests(
-      allRequests.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 5)
-    );
-
-    // آخر 5 شكاوى
-    setRecentComplaints(
-      complaints
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-        .slice(0, 5)
-    );
-
-    // آخر 5 تذاكر دعم
-    setRecentSupportTickets(
-      supportTickets
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-        .slice(0, 5)
-    );
-
-    // آخر 5 فواتير مدفوعة
-    setRecentInvoices(
-      paidInvoices
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-        .slice(0, 5)
-    );
-  };
+  }
 
   return (
     <div className="space-y-6 bg-white">
@@ -105,9 +92,9 @@ export const DashboardPage: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-sm text-[#666666] mb-2">إجمالي المستخدمين</h3>
-              <p className="text-2xl font-semibold text-[#111111]">{stats.totalUsers}</p>
+              <p className="text-2xl font-semibold text-[#111111]">{data.users.total}</p>
               <p className="text-xs text-[#666666] mt-1">
-                {stats.totalClients} عميل • {stats.totalContractors} مقاول
+                {data.users.totalClients} عميل • {data.users.totalContractors} مقاول
               </p>
             </div>
             <Users className="w-8 h-8 text-blue-600" />
@@ -118,9 +105,9 @@ export const DashboardPage: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-sm text-[#666666] mb-2">إجمالي الطلبات</h3>
-              <p className="text-2xl font-semibold text-[#111111]">{stats.totalRequests}</p>
+              <p className="text-2xl font-semibold text-[#111111]">{data.requests.total}</p>
               <p className="text-xs text-[#666666] mt-1">
-                {stats.totalRegularRequests} عادية • {stats.totalQuickServiceOrders} سريعة
+                {data.requests.regularTotal} عادية • {data.requests.quickTotal} سريعة
               </p>
             </div>
             <ClipboardList className="w-8 h-8 text-green-600" />
@@ -131,11 +118,9 @@ export const DashboardPage: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-sm text-[#666666] mb-2">الفواتير</h3>
-              <p className="text-2xl font-semibold text-[#111111]">
-                {stats.totalPaidInvoices + stats.totalPendingInvoices}
-              </p>
+              <p className="text-2xl font-semibold text-[#111111]">{data.invoices.total}</p>
               <p className="text-xs text-[#666666] mt-1">
-                {stats.totalPaidInvoices} مدفوعة • {stats.totalPendingInvoices} بانتظار
+                {data.invoices.paid} مدفوعة • {data.invoices.pending} بانتظار / مسودة
               </p>
             </div>
             <Receipt className="w-8 h-8 text-orange-600" />
@@ -146,7 +131,7 @@ export const DashboardPage: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-sm text-[#666666] mb-2">الشكاوى المفتوحة</h3>
-              <p className="text-2xl font-semibold text-[#111111]">{stats.totalOpenComplaints}</p>
+              <p className="text-2xl font-semibold text-[#111111]">{data.complaints.open}</p>
             </div>
             <AlertTriangle className="w-8 h-8 text-red-600" />
           </div>
@@ -156,47 +141,45 @@ export const DashboardPage: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-sm text-[#666666] mb-2">تذاكر الدعم المفتوحة</h3>
-              <p className="text-2xl font-semibold text-[#111111]">{stats.totalOpenSupportTickets}</p>
+              <p className="text-2xl font-semibold text-[#111111]">{data.supportTickets.open}</p>
             </div>
             <Ticket className="w-8 h-8 text-purple-600" />
           </div>
         </Card>
       </div>
 
-      {/* رسوم بيانية بسيطة */}
+      {/* رسوم بيانية من الخادم */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* عدد الطلبات حسب الشهر */}
         <Card>
           <h3 className="text-lg font-semibold text-[#111111] mb-4">عدد الطلبات حسب الشهر</h3>
           <div className="space-y-2">
-            {['يناير', 'فبراير', 'مارس', 'أبريل'].map((month, idx) => (
-              <div key={month} className="flex items-center gap-3">
-                <span className="text-sm text-[#666666] w-20">{month}</span>
-                <div className="flex-1 bg-blue-500/10 rounded-full h-6 relative overflow-hidden">
-                  <div
-                    className="bg-blue-500 h-full rounded-full transition-all"
-                    style={{ width: `${(idx + 1) * 25}%` }}
-                  />
+            {data.charts.requestsByMonth.length === 0 ? (
+              <p className="text-sm text-[#666666]">لا بيانات للفترة الحالية</p>
+            ) : (
+              data.charts.requestsByMonth.map((row) => (
+                <div key={row.yearMonth} className="flex items-center gap-3">
+                  <span className="text-sm text-[#666666] w-28 shrink-0">
+                    {formatYearMonthAr(row.yearMonth)}
+                  </span>
+                  <div className="flex-1 bg-blue-500/10 rounded-full h-6 relative overflow-hidden min-w-0">
+                    <div
+                      className="bg-blue-500 h-full rounded-full transition-all"
+                      style={{ width: `${(row.count / maxRequestsMonth) * 100}%` }}
+                    />
+                  </div>
+                  <span className="text-sm font-medium text-[#111111] w-8 text-left">{row.count}</span>
                 </div>
-                <span className="text-sm font-medium text-[#111111] w-8">{(idx + 1) * 5}</span>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </Card>
 
-        {/* الطلبات حسب الحالة */}
         <Card>
           <h3 className="text-lg font-semibold text-[#111111] mb-4">الطلبات حسب الحالة</h3>
           <div className="space-y-3">
-            {[
-              { status: 'مسودة', count: 2, color: 'bg-gray-500' },
-              { status: 'مرسلة', count: 5, color: 'bg-blue-500' },
-              { status: 'مقبولة', count: 8, color: 'bg-[#05C4AF]' },
-              { status: 'مكتملة', count: 3, color: 'bg-[#05C4AF]' },
-              { status: 'ملغاة', count: 1, color: 'bg-[#D34D72]' },
-            ].map((item) => (
-              <div key={item.status} className="flex items-center justify-between">
-                <span className="text-sm text-[#666666]">{item.status}</span>
+            {statusRows.map((item) => (
+              <div key={item.label} className="flex items-center justify-between">
+                <span className="text-sm text-[#666666]">{item.label}</span>
                 <div className="flex items-center gap-2">
                   <div className={`w-3 h-3 rounded-full ${item.color}`} />
                   <span className="text-sm font-medium text-[#111111]">{item.count}</span>
@@ -206,36 +189,35 @@ export const DashboardPage: React.FC = () => {
           </div>
         </Card>
 
-        {/* إيرادات الفواتير حسب الشهر */}
         <Card>
-          <h3 className="text-lg font-semibold text-[#111111] mb-4">إيرادات الفواتير</h3>
+          <h3 className="text-lg font-semibold text-[#111111] mb-4">إيرادات الفواتير (مدفوعة)</h3>
           <div className="space-y-2">
-            {[
-              { month: 'يناير', amount: 50000 },
-              { month: 'فبراير', amount: 75000 },
-              { month: 'مارس', amount: 60000 },
-              { month: 'أبريل', amount: 90000 },
-            ].map((item) => (
-              <div key={item.month} className="flex items-center gap-3">
-                <span className="text-sm text-[#666666] w-20">{item.month}</span>
-                <div className="flex-1 bg-[#05C4AF]/10 rounded-full h-6 relative overflow-hidden">
-                  <div
-                    className="bg-[#05C4AF] h-full rounded-full transition-all"
-                    style={{ width: `${(item.amount / 100000) * 100}%` }}
-                  />
+            {data.charts.revenueByMonth.length === 0 ? (
+              <p className="text-sm text-[#666666]">لا بيانات للفترة الحالية</p>
+            ) : (
+              data.charts.revenueByMonth.map((item) => (
+                <div key={item.yearMonth} className="flex items-center gap-3">
+                  <span className="text-sm text-[#666666] w-28 shrink-0">
+                    {formatYearMonthAr(item.yearMonth)}
+                  </span>
+                  <div className="flex-1 bg-[#05C4AF]/10 rounded-full h-6 relative overflow-hidden min-w-0">
+                    <div
+                      className="bg-[#05C4AF] h-full rounded-full transition-all"
+                      style={{ width: `${(item.totalSar / maxRevenueMonth) * 100}%` }}
+                    />
+                  </div>
+                  <span className="text-sm font-medium text-[#111111] w-24 text-left shrink-0">
+                    {formatSar(item.totalSar)}
+                  </span>
                 </div>
-                <span className="text-sm font-medium text-[#111111] w-20 text-left">
-                  {formatSar(item.amount)}
-                </span>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </Card>
       </div>
 
       {/* آخر الأنشطة */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* آخر الطلبات */}
         <Card>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-[#111111]">آخر الطلبات</h3>
@@ -244,26 +226,34 @@ export const DashboardPage: React.FC = () => {
             </Link>
           </div>
           <div className="space-y-3">
-            {recentRequests.length === 0 ? (
+            {data.recent.requests.length === 0 ? (
               <p className="text-sm text-[#666666] text-center py-4">لا توجد مناقصات أو خدمات سريعة</p>
             ) : (
-              recentRequests.map((request) => (
-                <div
-                  key={request.id}
-                  className="flex items-center justify-between p-3 bg-blue-500/5 rounded-md hover:bg-blue-500/10 transition-colors border border-blue-500/10"
+              data.recent.requests.map((request) => (
+                <Link
+                  key={`${request.type}-${request.id}`}
+                  to={
+                    request.type === 'quick'
+                      ? `/requests/quick/${request.id}`
+                      : `/requests/regular/${request.id}`
+                  }
+                  className="block"
                 >
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-[#111111]">{request.title || request.serviceTitle}</p>
-                    <p className="text-xs text-[#666666] mt-1">{formatDate(request.createdAt)}</p>
+                  <div className="flex items-center justify-between p-3 bg-blue-500/5 rounded-md hover:bg-blue-500/10 transition-colors border border-blue-500/10">
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-[#111111]">
+                        {request.title || request.serviceTitle || '—'}
+                      </p>
+                      <p className="text-xs text-[#666666] mt-1">{formatDate(request.createdAt)}</p>
+                    </div>
+                    <StatusBadge status={request.status} />
                   </div>
-                  <StatusBadge status={request.status} />
-                </div>
+                </Link>
               ))
             )}
           </div>
         </Card>
 
-        {/* آخر الشكاوى */}
         <Card>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-[#111111]">آخر الشكاوى</h3>
@@ -272,20 +262,22 @@ export const DashboardPage: React.FC = () => {
             </Link>
           </div>
           <div className="space-y-3">
-            {recentComplaints.length === 0 ? (
+            {data.recent.complaints.length === 0 ? (
               <p className="text-sm text-[#666666] text-center py-4">لا توجد شكاوى</p>
             ) : (
-              recentComplaints.map((complaint) => (
+              data.recent.complaints.map((complaint) => (
                 <div
                   key={complaint.id}
                   className="flex items-center justify-between p-3 bg-red-500/5 rounded-md hover:bg-red-500/10 transition-colors border border-red-500/10"
                 >
                   <div className="flex-1">
-                    <p className="text-sm font-medium text-[#111111] line-clamp-2">{complaint.description}</p>
+                    <p className="text-sm font-medium text-[#111111] line-clamp-2">
+                      {complaint.description}
+                    </p>
                     <p className="text-xs text-[#666666] mt-1">{formatDate(complaint.createdAt)}</p>
                   </div>
-                  <StatusBadge 
-                    status={complaint.response ? 'REPLIED' : 'AWAITING_REPLY'} 
+                  <StatusBadge
+                    status={complaint.response ? 'REPLIED' : 'AWAITING_REPLY'}
                     customLabel={complaint.response ? 'تم الرد' : 'بانتظار الرد'}
                   />
                 </div>
@@ -294,7 +286,6 @@ export const DashboardPage: React.FC = () => {
           </div>
         </Card>
 
-        {/* آخر تذاكر الدعم */}
         <Card>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-[#111111]">آخر تذاكر الدعم</h3>
@@ -303,10 +294,10 @@ export const DashboardPage: React.FC = () => {
             </Link>
           </div>
           <div className="space-y-3">
-            {recentSupportTickets.length === 0 ? (
+            {data.recent.supportTickets.length === 0 ? (
               <p className="text-sm text-[#666666] text-center py-4">لا توجد تذاكر دعم</p>
             ) : (
-              recentSupportTickets.map((ticket) => (
+              data.recent.supportTickets.map((ticket) => (
                 <div
                   key={ticket.id}
                   className="flex items-center justify-between p-3 bg-purple-500/5 rounded-md hover:bg-purple-500/10 transition-colors border border-purple-500/10"
@@ -315,9 +306,9 @@ export const DashboardPage: React.FC = () => {
                     <p className="text-sm font-medium text-[#111111]">{ticket.title}</p>
                     <p className="text-xs text-[#666666] mt-1">{formatDate(ticket.createdAt)}</p>
                   </div>
-                  <StatusBadge 
-                    status={ticket.replies && ticket.replies.length > 0 ? 'REPLIED' : 'AWAITING_REPLY'} 
-                    customLabel={ticket.replies && ticket.replies.length > 0 ? 'تم الرد' : 'بانتظار الرد'}
+                  <StatusBadge
+                    status={ticket.status === 'closed' ? 'REPLIED' : 'AWAITING_REPLY'}
+                    customLabel={ticket.status === 'closed' ? 'مغلقة' : 'جديدة'}
                   />
                 </div>
               ))
