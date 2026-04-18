@@ -111,7 +111,6 @@ const StatCard: React.FC<{
 };
 
 export const BIPage: React.FC = () => {
-  /** Both empty = all records from inception through now. Optional lower/upper bounds when set. */
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [loading, setLoading] = useState(true);
@@ -158,7 +157,6 @@ export const BIPage: React.FC = () => {
     return isNaN(date.getTime()) ? null : date;
   };
 
-  /** Parse entity timestamps (ISO with time or date-only). */
   const parseEntityDate = (raw: string): Date | null => {
     if (!raw) return null;
     const d = raw.includes('T') ? new Date(raw) : new Date(`${raw.split('T')[0]}T12:00:00`);

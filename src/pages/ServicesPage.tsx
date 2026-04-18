@@ -183,7 +183,6 @@ const RegularServicesTab: React.FC = () => {
     return g ? flattenSubcategoriesForGroup(g) : [];
   };
 
-  /** Middle categories (الفئة الرئيسية) — creates a default bucket if the group has none (e.g. new groups). */
   const openAddSubcategoryForGroup = async (group: ServiceGroup) => {
     let g = group;
     if (!(g.categories && g.categories.length > 0)) {
