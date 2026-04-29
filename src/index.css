@@ -10,7 +10,8 @@
   
   body {
     @apply m-0 min-h-screen;
-    font-family: 'Tajawal', 'Cairo', sans-serif;
+    /* Tajawal is loaded in index.html; avoid naming unloaded families as fallbacks. */
+    font-family: 'Tajawal', system-ui, sans-serif;
   }
 }
 

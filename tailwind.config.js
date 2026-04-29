@@ -6,6 +6,9 @@ export default {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['"Tajawal"', 'system-ui', 'sans-serif'],
+      },
       colors: {
         background: '#FFFFFF',
         backgroundMuted: '#F7F7F7',

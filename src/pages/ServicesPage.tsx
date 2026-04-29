@@ -9,11 +9,15 @@ import type { ServiceGroup, Category, Subcategory, QuickService } from '../types
 import { IconPicker } from '../components/IconPicker';
 import * as LucideIcons from 'lucide-react';
 
-// Helper function to get icon component by name
+// Lucide exports are PascalCase; tolerate stray casing from old data
 const getIconComponent = (iconName: string) => {
   if (!iconName) return null;
-  const IconComponent = (LucideIcons as any)[iconName];
-  return IconComponent || null;
+  const t = iconName.trim();
+  if (!t) return null;
+  const L = LucideIcons as any;
+  const pascal = t[0]!.toUpperCase() + t.slice(1);
+  const direct = L[t] ?? L[pascal];
+  return (direct as React.ComponentType<{ className?: string }> | null) || (L.Box as React.ComponentType<{ className?: string }>);
 };
 
 // Helper component to render icon
