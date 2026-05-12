@@ -360,12 +360,14 @@ function mapAdminComplaint(r: Record<string, unknown>): Complaint {
   const type = (Object.values(ComplaintType) as string[]).includes(t)
     ? (t as ComplaintType)
     : ComplaintType.OTHER;
+  const rb = String(r.raisedBy ?? '').toUpperCase();
+  const raisedBy: Complaint['raisedBy'] = rb === 'CONTRACTOR' ? 'CONTRACTOR' : 'CLIENT';
   return {
     id: String(r.id),
     projectId: String(r.projectId ?? ''),
     clientId: String(r.clientId ?? ''),
     contractorId: String(r.contractorId ?? ''),
-    raisedBy: 'CLIENT',
+    raisedBy,
     type,
     description: String(r.description ?? ''),
     attachments: Array.isArray(r.attachments) ? (r.attachments as string[]) : [],
