@@ -8,7 +8,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { adminApi } from '../services/api';
 import type { SupportTicket } from '../types';
 import { UserRole } from '../types';
-import { formatDate, formatDateTime } from '../utils/formatters';
+import { formatDate, formatDateTime, getSupportTicketDisplayNumber } from '../utils/formatters';
 import { Info, ArrowRight } from 'lucide-react';
 
 const ROLE_LABELS: Record<UserRole, string> = {
@@ -93,96 +93,107 @@ export const SupportTicketDetailsPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div>
-        <Button variant="secondary" onClick={() => navigate('/support-tickets')} className="mb-2">
-          <ArrowRight className="w-4 h-4 ml-2" />
-          العودة إلى تذاكر الدعم
-        </Button>
-        <h1 className="text-2xl font-semibold text-[#111111]">تفاصيل تذكرة الدعم</h1>
-        {displayName ? (
-          <p className="text-sm text-gray-600 mt-1">{displayName}</p>
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div className="min-w-0 flex-1">
+          <Button variant="secondary" onClick={() => navigate('/support-tickets')} className="mb-2">
+            <ArrowRight className="w-4 h-4 ml-2" />
+            العودة إلى تذاكر الدعم
+          </Button>
+          <h1 className="text-2xl font-semibold text-[#111111]">تفاصيل تذكرة الدعم</h1>
+          <p className="text-sm text-gray-600 mt-1">
+            معرف التذكرة:{' '}
+            <span className="font-medium text-[#111111]">
+              {getSupportTicketDisplayNumber({ id: ticket.id, ticketNumber: ticket.ticketNumber })}
+            </span>
+          </p>
+        </div>
+        {!hasSupportReplies ? (
+          <div className="shrink-0 md:pt-8">
+            <Button
+              variant="primary"
+              onClick={() => {
+                setReplyContent('');
+                setShowReplyModal(true);
+              }}
+            >
+              الرد على التذكرة
+            </Button>
+          </div>
         ) : null}
       </div>
-      {!hasSupportReplies && (
-        <div className="mb-4">
-          <Button variant="primary" onClick={() => {
-            setReplyContent('');
-            setShowReplyModal(true);
-          }}>
-            الرد على التذكرة
-          </Button>
-        </div>
-      )}
 
-      {/* Ticket Info */}
+      {/* Ticket Info — same column grouping as original: ticket id + status | title + date */}
       <Card title="معلومات التذكرة">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <p className="text-sm text-gray-600 mb-1">العنوان</p>
-            <p className="text-[#111111] font-medium">{ticket.title}</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm text-gray-600 mb-1">معرف التذكرة</p>
+              <p className="text-[#111111] font-medium">
+                {getSupportTicketDisplayNumber({ id: ticket.id, ticketNumber: ticket.ticketNumber })}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600 mb-1">الحالة</p>
+              <StatusBadge
+                status={hasSupportReplies ? 'REPLIED' : 'AWAITING_REPLY'}
+                customLabel={hasSupportReplies ? 'تم الرد' : 'بانتظار الرد'}
+              />
+            </div>
           </div>
-          <div>
-            <p className="text-sm text-gray-600 mb-1">الحالة</p>
-            <StatusBadge 
-              status={hasSupportReplies ? 'REPLIED' : 'AWAITING_REPLY'} 
-              customLabel={hasSupportReplies ? 'تم الرد' : 'بانتظار الرد'}
-            />
-          </div>
-          <div>
-            <p className="text-sm text-gray-600 mb-1">تاريخ الإنشاء</p>
-            <p className="text-[#111111] font-medium">{formatDate(ticket.createdAt)}</p>
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm text-gray-600 mb-1">العنوان</p>
+              <p className="text-[#111111] font-medium">{ticket.title}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600 mb-1">تاريخ الإنشاء</p>
+              <p className="text-[#111111] font-medium">{formatDate(ticket.createdAt)}</p>
+            </div>
           </div>
         </div>
-        <details className="mt-4 text-sm text-gray-500 border-t border-gray-100 pt-3">
-          <summary className="cursor-pointer select-none text-gray-600 hover:text-gray-800">
-            معرفات للنسخ (تقنية)
-          </summary>
-          <dl className="mt-2 space-y-2 font-mono text-xs break-all">
-            <div>
-              <dt className="text-gray-500 mb-0.5">معرف التذكرة</dt>
-              <dd className="text-gray-800">{ticket.id}</dd>
-            </div>
-            <div>
-              <dt className="text-gray-500 mb-0.5">معرف المستخدم</dt>
-              <dd className="text-gray-800">{ticket.userId}</dd>
-            </div>
-          </dl>
-        </details>
       </Card>
 
-      {/* User Info */}
+      {/* User Info — original: name + phone | معرف المستخدم (PID) + role */}
       {ticket.userId ? (
         <Card title="معلومات المستخدم">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <p className="text-sm text-gray-600 mb-1">الاسم</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm text-gray-600 mb-1">الاسم</p>
+                {user ? (
+                  <Link
+                    to={`/users/${ticket.role === UserRole.CLIENT ? 'clients' : 'contractors'}/${user.id}`}
+                    className="text-blue-600 hover:underline font-medium"
+                  >
+                    {displayName || user.name || ticket.userName || '—'}
+                  </Link>
+                ) : (
+                  <p className="text-[#111111] font-medium">
+                    {displayName || ticket.userName || '—'}
+                    <span className="block text-xs text-amber-700 mt-1 font-sans">
+                      تعذر تحميل الملف الكامل من الخادم
+                    </span>
+                  </p>
+                )}
+              </div>
               {user ? (
-                <Link
-                  to={`/users/${ticket.role === UserRole.CLIENT ? 'clients' : 'contractors'}/${user.id}`}
-                  className="text-blue-600 hover:underline font-medium"
-                >
-                  {displayName || user.name || ticket.userName || '—'}
-                </Link>
-              ) : (
-                <p className="text-[#111111] font-medium">
-                  {displayName || ticket.userName || '—'}
-                  <span className="block text-xs text-amber-700 mt-1 font-sans">
-                    تعذر تحميل الملف الكامل من الخادم
-                  </span>
-                </p>
-              )}
-            </div>
-            {user ? (
-              <>
                 <div>
                   <p className="text-sm text-gray-600 mb-1">رقم الجوال</p>
-                  <p className="text-[#111111]">{user.phone || '—'}</p>
+                  <p className="text-[#111111] font-medium">{user.phone || '—'}</p>
                 </div>
-              </>
-            ) : null}
-            <div>
-              <p className="text-sm text-gray-600 mb-1">الدور</p>
-              <span className="text-[#111111]">{ROLE_LABELS[ticket.role]}</span>
+              ) : null}
+            </div>
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm text-gray-600 mb-1">معرف المستخدم</p>
+                <p className="text-[#111111] font-medium">
+                  {(ticket.userPid && ticket.userPid.trim()) || (user?.pid && String(user.pid).trim()) || '—'}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600 mb-1">الدور</p>
+                <span className="text-[#111111] font-medium">{ROLE_LABELS[ticket.role]}</span>
+              </div>
             </div>
           </div>
         </Card>

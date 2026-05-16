@@ -19,7 +19,7 @@ import type {
   ClientProfile,
 } from '../types';
 import { ProjectStatus, ComplaintStatus, ComplaintType, InvoiceStatus } from '../types';
-import { formatDate, formatSar, formatDateTime, getInvoiceDisplayNumber } from '../utils/formatters';
+import { formatDate, formatSar, formatDateTime, getInvoiceDisplayNumber, getRequestDisplayNumber, getProjectDisplayNumber, getContractDisplayNumber } from '../utils/formatters';
 
 const TABS = [
   { label: 'نظرة عامة', value: 'overview' },
@@ -119,7 +119,7 @@ export const ProjectDetailsPage: React.FC = () => {
                 <div className="space-y-3">
                   <div className="flex items-start gap-4">
                     <span className="text-[#666666] min-w-[100px]">رقم الطلب:</span>
-                    <span className="text-[#111111]">{request.id}</span>
+                    <span className="text-[#111111]">{getRequestDisplayNumber(request.id, false)}</span>
                   </div>
                   <div className="flex items-start gap-4">
                     <span className="text-[#666666] min-w-[100px]">نوع الخدمة:</span>
@@ -251,7 +251,7 @@ export const ProjectDetailsPage: React.FC = () => {
                 <div className="space-y-3">
                   <div className="flex items-start gap-4">
                     <span className="text-[#666666] min-w-[140px]">رقم العقد:</span>
-                    <span className="text-[#111111]">{contract.contractNumber || contract.id}</span>
+                    <span className="text-[#111111]">{getContractDisplayNumber(contract)}</span>
                   </div>
                   <div className="flex items-start gap-4">
                     <span className="text-[#666666] min-w-[140px]">القيمة الإجمالية:</span>
@@ -787,10 +787,9 @@ export const ProjectDetailsPage: React.FC = () => {
         </div>
         <p className="text-sm text-[#666666] mr-4">
           رقم المشروع:{' '}
-          <span className="font-medium text-[#111111]">{project.projectNumber || project.id}</span>
-          {project.projectNumber && project.projectNumber !== project.id && (
-            <span className="text-xs text-[#999999] mr-2">(معرّف النظام: {project.id})</span>
-          )}
+          <span className="font-medium text-[#111111]">
+            {project.projectNumber?.trim() || getProjectDisplayNumber(project.id)}
+          </span>
         </p>
       </div>
 

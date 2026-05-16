@@ -297,21 +297,31 @@ export const DashboardPage: React.FC = () => {
             {data.recent.supportTickets.length === 0 ? (
               <p className="text-sm text-[#666666] text-center py-4">لا توجد تذاكر دعم</p>
             ) : (
-              data.recent.supportTickets.map((ticket) => (
-                <div
-                  key={ticket.id}
-                  className="flex items-center justify-between p-3 bg-purple-500/5 rounded-md hover:bg-purple-500/10 transition-colors border border-purple-500/10"
-                >
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-[#111111]">{ticket.title}</p>
-                    <p className="text-xs text-[#666666] mt-1">{formatDate(ticket.createdAt)}</p>
-                  </div>
-                  <StatusBadge
-                    status={ticket.status === 'closed' ? 'REPLIED' : 'AWAITING_REPLY'}
-                    customLabel={ticket.status === 'closed' ? 'مغلقة' : 'جديدة'}
-                  />
-                </div>
-              ))
+              data.recent.supportTickets.map((ticket) => {
+                const st = String(ticket.status || '').toUpperCase();
+                const resolved = st === 'RESOLVED' || st === 'CLOSED';
+                return (
+                  <Link
+                    key={ticket.id}
+                    to={`/support-tickets/${ticket.id}`}
+                    className="block"
+                  >
+                    <div className="flex items-center justify-between p-3 bg-purple-500/5 rounded-md hover:bg-purple-500/10 transition-colors border border-purple-500/10">
+                      <div className="flex-1 min-w-0">
+                        {ticket.ticketNumber ? (
+                          <p className="text-xs text-[#666666] font-medium mb-0.5">{ticket.ticketNumber}</p>
+                        ) : null}
+                        <p className="text-sm font-medium text-[#111111] line-clamp-2">{ticket.title}</p>
+                        <p className="text-xs text-[#666666] mt-1">{formatDate(ticket.createdAt)}</p>
+                      </div>
+                      <StatusBadge
+                        status={resolved ? 'REPLIED' : 'AWAITING_REPLY'}
+                        customLabel={resolved ? 'تم الرد' : 'بانتظار الرد'}
+                      />
+                    </div>
+                  </Link>
+                );
+              })
             )}
           </div>
         </Card>

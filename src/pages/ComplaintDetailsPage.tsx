@@ -15,6 +15,11 @@ function complaintDisplayRef(c: Complaint): string {
   return (c.publicReference && c.publicReference.trim()) || c.id;
 }
 
+function displayOrDash(v: string | undefined): string {
+  const s = (v ?? '').trim();
+  return s || '—';
+}
+
 const COMPLAINT_TYPE_LABELS: Record<ComplaintType, string> = {
   [ComplaintType.DELAY]: 'تأخير',
   [ComplaintType.QUALITY]: 'جودة',
@@ -206,44 +211,48 @@ export const ComplaintDetailsPage: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {complaint.clientId && (complaint.clientName || '').trim() ? (
           <Card title="معلومات العميل">
-            <div className="space-y-2">
+            <div className="space-y-4 text-right" dir="rtl">
               <div>
-                <p className="text-sm text-gray-600">الاسم</p>
+                <p className="text-sm text-gray-500 mb-1">الاسم</p>
                 <Link
                   to={`/users/clients/${complaint.clientId}`}
-                  className="text-blue-600 hover:underline"
+                  className="text-blue-600 hover:underline font-medium text-base inline-block"
                 >
                   {complaint.clientName}
                 </Link>
               </div>
-              {complaint.clientReference ? (
-                <div>
-                  <p className="text-sm text-gray-600">رقم مرجع الحساب</p>
-                  <p className="text-[#111111] font-medium">{complaint.clientReference}</p>
-                </div>
-              ) : null}
+              <div>
+                <p className="text-sm text-gray-500 mb-1">رقم الهوية</p>
+                <p className="text-[#111111] font-medium">{displayOrDash(complaint.clientPid)}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500 mb-1">رقم الجوال</p>
+                <p className="text-[#111111] font-medium">{displayOrDash(complaint.clientPhone)}</p>
+              </div>
             </div>
           </Card>
         ) : null}
 
         {complaint.contractorId && (complaint.contractorName || '').trim() ? (
           <Card title="معلومات المقاول">
-            <div className="space-y-2">
+            <div className="space-y-4 text-right" dir="rtl">
               <div>
-                <p className="text-sm text-gray-600">الاسم / الشركة</p>
+                <p className="text-sm text-gray-500 mb-1">الاسم / الشركة</p>
                 <Link
                   to={`/users/contractors/${complaint.contractorId}`}
-                  className="text-blue-600 hover:underline"
+                  className="text-blue-600 hover:underline font-medium text-base inline-block"
                 >
                   {complaint.contractorName}
                 </Link>
               </div>
-              {complaint.contractorReference ? (
-                <div>
-                  <p className="text-sm text-gray-600">رقم مرجع الحساب</p>
-                  <p className="text-[#111111] font-medium">{complaint.contractorReference}</p>
-                </div>
-              ) : null}
+              <div>
+                <p className="text-sm text-gray-500 mb-1">رقم الهوية</p>
+                <p className="text-[#111111] font-medium">{displayOrDash(complaint.contractorPid)}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500 mb-1">رقم الجوال</p>
+                <p className="text-[#111111] font-medium">{displayOrDash(complaint.contractorPhone)}</p>
+              </div>
             </div>
           </Card>
         ) : null}

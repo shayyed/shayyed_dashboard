@@ -6,8 +6,7 @@ import { Button } from '../components/Button';
 import { ArrowRight, FileText, Image as ImageIcon } from 'lucide-react';
 import { adminApi } from '../services/api';
 import type { Quotation } from '../types';
-import { QuotationStatus } from '../types';
-import { formatSar, formatDate } from '../utils/formatters';
+import { formatSar, formatDate, getRequestDisplayNumber, getQuotationDisplayNumber } from '../utils/formatters';
 
 export const QuotationDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -85,12 +84,7 @@ export const QuotationDetailsPage: React.FC = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm text-[#666666] mb-1">رقم العرض</p>
-                  <p className="text-[#111111] font-medium">
-                    {quotation.quotationNumber || quotation.id}
-                  </p>
-                  {quotation.quotationNumber && quotation.quotationNumber !== quotation.id && (
-                    <p className="text-xs text-[#999999] mt-1">معرّف النظام: {quotation.id}</p>
-                  )}
+                  <p className="text-[#111111] font-medium">{getQuotationDisplayNumber(quotation)}</p>
                 </div>
                 <div>
                   <p className="text-sm text-[#666666] mb-1">الحالة</p>
@@ -244,12 +238,6 @@ export const QuotationDetailsPage: React.FC = () => {
                 </Link>
               </div>
               <div>
-                <p className="text-sm text-[#666666] mb-1">معرف المقاول</p>
-                <Link to={`/users/contractors/${quotation.contractorId}`} className="text-blue-600 hover:underline">
-                  {quotation.contractorId}
-                </Link>
-              </div>
-              <div>
                 <p className="text-sm text-[#666666] mb-1">التقييم</p>
                 <div className="flex items-center gap-1">
                   <span className="text-yellow-500">★</span>
@@ -284,9 +272,9 @@ export const QuotationDetailsPage: React.FC = () => {
                 </Link>
               </div>
               <div>
-                <p className="text-sm text-[#666666] mb-1">معرف الطلب</p>
+                <p className="text-sm text-[#666666] mb-1">رقم الطلب</p>
                 <Link to={requestPath} className="text-blue-600 hover:underline">
-                  {quotation.requestId}
+                  {getRequestDisplayNumber(quotation.requestId, !isRegularRequest)}
                 </Link>
               </div>
               <div>
@@ -313,17 +301,6 @@ export const QuotationDetailsPage: React.FC = () => {
                     {client?.name || quotation.clientName || quotation.clientId}
                   </Link>
                 </div>
-                {quotation.clientId && (
-                  <div>
-                    <p className="text-sm text-[#666666] mb-1">معرف العميل</p>
-                    <Link
-                      to={`/users/clients/${quotation.clientId}`}
-                      className="text-blue-600 hover:underline"
-                    >
-                      {quotation.clientId}
-                    </Link>
-                  </div>
-                )}
                 {client?.phone ? (
                   <div>
                     <p className="text-sm text-[#666666] mb-1">رقم الجوال</p>

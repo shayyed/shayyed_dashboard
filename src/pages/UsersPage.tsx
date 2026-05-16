@@ -10,7 +10,7 @@ import { Button } from '../components/Button';
 import { EmptyState } from '../components/EmptyState';
 import { adminApi } from '../services/api';
 import type { User, ContractorProfile } from '../types';
-import { UserRole, VerificationStatus } from '../types';
+import { UserRole } from '../types';
 import { formatDate } from '../utils/formatters';
 
 const TABS = [
@@ -33,7 +33,6 @@ export const UsersPage: React.FC = () => {
   
   // فلاتر المقاولين
   const [contractorSearch, setContractorSearch] = useState('');
-  const [contractorVerificationStatus, setContractorVerificationStatus] = useState('');
   const [contractorRatingMin, setContractorRatingMin] = useState('');
   const [contractorRatingMax, setContractorRatingMax] = useState('');
   const [contractorRegistrationDateFrom, setContractorRegistrationDateFrom] = useState('');
@@ -87,10 +86,12 @@ export const UsersPage: React.FC = () => {
     
     if (clientSearch) {
       const searchLower = clientSearch.toLowerCase();
-      filtered = filtered.filter(u => 
+      const pidNorm = clientSearch.replace(/\s/g, '');
+      filtered = filtered.filter(u =>
         u.name.toLowerCase().includes(searchLower) ||
         u.id.includes(searchLower) ||
         u.phone.includes(searchLower) ||
+        (u.pid && (String(u.pid).includes(pidNorm) || String(u.pid).toLowerCase().includes(searchLower))) ||
         (u.email && u.email.toLowerCase().includes(searchLower))
       );
     }
@@ -112,19 +113,17 @@ export const UsersPage: React.FC = () => {
     
     if (contractorSearch) {
       const searchLower = contractorSearch.toLowerCase();
-      filtered = filtered.filter(c => 
+      const pidNorm = contractorSearch.replace(/\s/g, '');
+      filtered = filtered.filter(c =>
         c.name.toLowerCase().includes(searchLower) ||
         c.id.includes(searchLower) ||
         c.phone.includes(searchLower) ||
+        (c.pid && (String(c.pid).includes(pidNorm) || String(c.pid).toLowerCase().includes(searchLower))) ||
         (c.companyName && c.companyName.toLowerCase().includes(searchLower)) ||
-        (c.commercialRegistration && c.commercialRegistration.includes(searchLower))
+        (c.commercialRegistration && c.commercialRegistration.includes(pidNorm))
       );
     }
-    
-    if (contractorVerificationStatus) {
-      filtered = filtered.filter(c => c.verificationStatus === contractorVerificationStatus);
-    }
-    
+
     if (contractorRatingMin) {
       filtered = filtered.filter(c => c.rating >= parseFloat(contractorRatingMin));
     }
@@ -148,7 +147,7 @@ export const UsersPage: React.FC = () => {
     }
     
     return filtered;
-  }, [contractors, contractorSearch, contractorVerificationStatus, contractorRatingMin, contractorRatingMax, contractorRegistrationDateFrom, contractorRegistrationDateTo, contractorCity]);
+  }, [contractors, contractorSearch, contractorRatingMin, contractorRatingMax, contractorRegistrationDateFrom, contractorRegistrationDateTo, contractorCity]);
 
   // أعمدة جدول العملاء
   const clientColumns = [
@@ -234,7 +233,6 @@ export const UsersPage: React.FC = () => {
 
   const resetContractorFilters = () => {
     setContractorSearch('');
-    setContractorVerificationStatus('');
     setContractorRatingMin('');
     setContractorRatingMax('');
     setContractorRegistrationDateFrom('');
@@ -312,19 +310,6 @@ export const UsersPage: React.FC = () => {
 
           <FilterBar
             filters={[
-              {
-                type: 'select',
-                key: 'verificationStatus',
-                label: 'حالة التحقق',
-                options: [
-                  { label: 'الكل', value: '' },
-                  { label: 'قيد المراجعة', value: VerificationStatus.PENDING },
-                  { label: 'موثق', value: VerificationStatus.VERIFIED },
-                  { label: 'مرفوض', value: VerificationStatus.REJECTED },
-                ],
-                value: contractorVerificationStatus,
-                onChange: setContractorVerificationStatus,
-              },
               {
                 type: 'searchable-select',
                 key: 'ratingMin',

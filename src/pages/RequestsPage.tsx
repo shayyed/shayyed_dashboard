@@ -11,7 +11,7 @@ import { EmptyState } from '../components/EmptyState';
 import { adminApi } from '../services/api';
 import type { ServiceRequest, QuickServiceOrder } from '../types';
 import { RequestStatus, QuickServiceOrderStatus } from '../types';
-import { formatDate, formatSar } from '../utils/formatters';
+import { formatDate, formatSar, getRequestDisplayNumber, formatQuotationDurationForDisplay, getRegularRequestDurationDisplay } from '../utils/formatters';
 
 const TYPE_TABS = [
   { label: 'المناقصات', value: 'regular' },
@@ -294,7 +294,7 @@ export const RequestsPage: React.FC = () => {
       label: 'رقم الطلب',
       render: (request: ServiceRequest) => (
         <Link to={`/requests/regular/${request.id}`} className="text-blue-600 hover:underline font-medium">
-          {request.id}
+          {getRequestDisplayNumber(request.id, false)}
         </Link>
       )
     },
@@ -305,13 +305,20 @@ export const RequestsPage: React.FC = () => {
       render: (request: ServiceRequest) =>
         request.clientId ? (
           <Link to={`/users/clients/${request.clientId}`} className="text-blue-600 hover:underline">
-            {request.clientName || request.clientId}
+            {(request.clientName && request.clientName.trim()) || 'عرض العميل'}
           </Link>
         ) : (
           '-'
         )
     },
     { key: 'serviceName', label: 'اسم الخدمة' },
+    {
+      key: 'duration',
+      label: 'المدة',
+      render: (request: ServiceRequest) => (
+        <span className="text-[#666666]">{getRegularRequestDurationDisplay(request)}</span>
+      ),
+    },
     { 
       key: 'location', 
       label: 'الموقع',
@@ -380,7 +387,7 @@ export const RequestsPage: React.FC = () => {
       label: 'رقم الطلب',
       render: (order: QuickServiceOrder) => (
         <Link to={`/requests/quick/${order.id}`} className="text-blue-600 hover:underline font-medium">
-          {order.id}
+          {getRequestDisplayNumber(order.id, true)}
         </Link>
       )
     },
@@ -395,13 +402,20 @@ export const RequestsPage: React.FC = () => {
       render: (order: QuickServiceOrder) =>
         order.clientId ? (
           <Link to={`/users/clients/${order.clientId}`} className="text-blue-600 hover:underline">
-            {order.clientName || order.clientId}
+            {(order.clientName && order.clientName.trim()) || 'عرض العميل'}
           </Link>
         ) : (
           '-'
         )
     },
     { key: 'serviceTitle', label: 'اسم الخدمة' },
+    {
+      key: 'duration',
+      label: 'مدة الطلب',
+      render: (order: QuickServiceOrder) => (
+        <span className="text-[#666666]">{formatQuotationDurationForDisplay(order.duration)}</span>
+      ),
+    },
     { 
       key: 'location', 
       label: 'الموقع',

@@ -8,8 +8,15 @@ import { StatusBadge } from '../components/StatusBadge';
 import { adminApi } from '../services/api';
 import type { Milestone } from '../types';
 import { InvoiceStatus } from '../types';
-import { mockContracts, mockProjects, mockInvoices, mockPayments } from '../mock/data';
-import { formatDate, formatDateTime, formatSar } from '../utils/formatters';
+import { mockProjects, mockInvoices, mockPayments } from '../mock/data';
+import {
+  formatDate,
+  formatDateTime,
+  formatSar,
+  getInternalDisplayRef,
+  getInvoiceDisplayNumber,
+  getProjectDisplayNumber,
+} from '../utils/formatters';
 import { ArrowRight } from 'lucide-react';
 
 const MILESTONE_STATUS_LABELS: Record<'NotDue' | 'Due' | 'Paid', string> = {
@@ -29,7 +36,6 @@ export const MilestoneDetailsPage: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [milestone, setMilestone] = useState<Milestone | null>(null);
-  const [contract, setContract] = useState<any>(null);
   const [project, setProject] = useState<any>(null);
   const [relatedInvoice, setRelatedInvoice] = useState<any>(null);
   const [relatedPayments, setRelatedPayments] = useState<any[]>([]);
@@ -56,9 +62,8 @@ export const MilestoneDetailsPage: React.FC = () => {
       // Find contract
       const contractData = await adminApi.getMilestoneContract(id!);
       if (contractData) {
-        setContract(contractData);
         // Find project
-        const projectData = mockProjects.find(p => p.contractId === contractData.id);
+        const projectData = mockProjects.find((p) => p.contractId === contractData.id);
         if (projectData) {
           setProject(projectData);
           // Find related invoice (if any)
@@ -127,7 +132,9 @@ export const MilestoneDetailsPage: React.FC = () => {
           العودة إلى الدفعات
         </Button>
         <h1 className="text-2xl font-semibold text-[#111111]">تفاصيل الدفعة</h1>
-        <p className="text-sm text-gray-600 mt-1">معرف الدفعة: {milestone.id}</p>
+        <p className="text-sm text-gray-600 mt-1">
+          معرف الدفعة: {getInternalDisplayRef(milestone.id, 'MILE')}
+        </p>
       </div>
 
       {/* Milestone Info */}
@@ -135,7 +142,7 @@ export const MilestoneDetailsPage: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <p className="text-sm text-gray-600 mb-1">معرف الدفعة</p>
-            <p className="text-[#111111] font-medium">{milestone.id}</p>
+            <p className="text-[#111111] font-medium">{getInternalDisplayRef(milestone.id, 'MILE')}</p>
           </div>
           <div>
             <p className="text-sm text-gray-600 mb-1">اسم الدفعة</p>
@@ -186,8 +193,10 @@ export const MilestoneDetailsPage: React.FC = () => {
               </Link>
             </div>
             <div>
-              <p className="text-sm text-gray-600 mb-1">معرف المشروع</p>
-              <p className="text-[#111111]">{project.id}</p>
+              <p className="text-sm text-gray-600 mb-1">رقم المشروع</p>
+              <p className="text-[#111111]">
+                {project.projectNumber?.trim() || getProjectDisplayNumber(project.id)}
+              </p>
             </div>
           </div>
         </Card>
@@ -203,12 +212,8 @@ export const MilestoneDetailsPage: React.FC = () => {
                 to={`/invoices/${relatedInvoice.id}`}
                 className="text-blue-600 hover:underline font-medium"
               >
-                {relatedInvoice.id}
+                {getInvoiceDisplayNumber(relatedInvoice)}
               </Link>
-            </div>
-            <div>
-              <p className="text-sm text-gray-600 mb-1">معرف الفاتورة</p>
-              <p className="text-[#111111]">{relatedInvoice.id}</p>
             </div>
             <div>
               <p className="text-sm text-gray-600 mb-1">العنوان</p>
@@ -258,7 +263,8 @@ export const MilestoneDetailsPage: React.FC = () => {
                       to={`/payments/${payment.id}`}
                       className="text-blue-600 hover:underline font-medium"
                     >
-                      {payment.referenceNumber || payment.id}
+                      {payment.referenceNumber?.trim() ||
+                        getInternalDisplayRef(payment.id, 'PAY')}
                     </Link>
                   </div>
                   <div>

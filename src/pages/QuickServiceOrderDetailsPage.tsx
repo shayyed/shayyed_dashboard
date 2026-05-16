@@ -12,8 +12,8 @@ import { ArrowRight, Star, FileText, Image as ImageIcon } from 'lucide-react';
 import { adminApi } from '../services/api';
 import type { QuickServiceOrder, User, Quotation, Invoice } from '../types';
 import { QuickServiceOrderStatus, QuotationStatus, InvoiceStatus } from '../types';
-import { mockQuotations, mockInvoices, mockChatThreads } from '../mock/data';
-import { formatDate, formatCurrency, formatDateTime, getInvoiceDisplayNumber } from '../utils/formatters';
+import { mockInvoices, mockChatThreads } from '../mock/data';
+import { formatDate, formatCurrency, formatDateTime, getInvoiceDisplayNumber, getRequestDisplayNumber, getInternalDisplayRef, getQuotationDisplayNumber, formatQuotationDurationForDisplay, getQuickServiceOrderDisplayDuration } from '../utils/formatters';
 
 export const QuickServiceOrderDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -71,9 +71,9 @@ export const QuickServiceOrderDetailsPage: React.FC = () => {
             } else if (!cancelled) setClient(null);
           } else if (!cancelled) setClient(null);
 
-          const orderQuotations = mockQuotations.filter((q) => q.requestId === id);
-          if (!cancelled) setQuotations(orderQuotations);
-          const accepted = orderQuotations.find((q) => q.status === QuotationStatus.ACCEPTED);
+          const quotes = await adminApi.listQuotations({ requestId: id, limit: '100' });
+          if (!cancelled) setQuotations(quotes);
+          const accepted = quotes.find((q) => q.status === QuotationStatus.ACCEPTED);
           if (!cancelled) setAcceptedQuotation(accepted || null);
 
           const relatedInvoice = mockInvoices.find((i) => i.projectId === id);
@@ -162,7 +162,7 @@ export const QuickServiceOrderDetailsPage: React.FC = () => {
       label: 'معرف العرض',
       render: (quotation: Quotation) => (
         <Link to={`/quotations/${quotation.id}`} className="text-blue-600 hover:underline">
-          {quotation.id}
+          {getQuotationDisplayNumber(quotation)}
         </Link>
       ),
     },
@@ -183,10 +183,7 @@ export const QuickServiceOrderDetailsPage: React.FC = () => {
     {
       key: 'duration',
       label: 'المدة',
-      render: (quotation: Quotation) => 
-        typeof quotation.duration === 'string' 
-          ? quotation.duration 
-          : `${quotation.duration} ${quotation.duration === 1 ? 'ساعة' : 'ساعة'}`,
+      render: (quotation: Quotation) => formatQuotationDurationForDisplay(quotation.duration),
     },
     {
       key: 'status',
@@ -219,8 +216,8 @@ export const QuickServiceOrderDetailsPage: React.FC = () => {
       <Card title="معلومات الطلب">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <p className="text-sm text-gray-600">معرف الطلب</p>
-            <p className="text-[#111111]">{order.id}</p>
+            <p className="text-sm text-gray-600">رقم الطلب</p>
+            <p className="text-[#111111]">{getRequestDisplayNumber(order.id, true)}</p>
           </div>
           {order.title && (
             <div>
@@ -237,7 +234,7 @@ export const QuickServiceOrderDetailsPage: React.FC = () => {
           <div>
             <p className="text-sm text-gray-600">معرف الخدمة السريعة</p>
             <Link to={`/services/quick/${order.serviceId}`} className="text-blue-600 hover:underline">
-              {order.serviceId}
+              {getInternalDisplayRef(order.serviceId, 'QSRV')}
             </Link>
           </div>
           <div>
@@ -245,9 +242,15 @@ export const QuickServiceOrderDetailsPage: React.FC = () => {
             <p className="text-[#111111]">{order.serviceTitle}</p>
           </div>
           <div>
-            <p className="text-sm text-gray-600">معرف العميل</p>
+            <p className="text-sm text-gray-600">مدة الطلب</p>
+            <p className="text-[#111111]">
+              {getQuickServiceOrderDisplayDuration(order, acceptedQuotation)}
+            </p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-600">العميل</p>
             <Link to={`/users/clients/${order.clientId}`} className="text-blue-600 hover:underline">
-              {order.clientId}
+              {(client?.name && client.name.trim()) || (order.clientName && order.clientName.trim()) || 'عرض بيانات العميل'}
             </Link>
           </div>
           {order.urgency && (
@@ -351,7 +354,7 @@ export const QuickServiceOrderDetailsPage: React.FC = () => {
             </div>
             <div>
               <p className="text-sm text-gray-600">رقم الهوية الوطنية</p>
-              <p className="text-[#111111]">{client.id}</p>
+              <p className="text-[#111111]">{client.pid?.trim() || '—'}</p>
             </div>
           </div>
         </Card>
@@ -365,7 +368,7 @@ export const QuickServiceOrderDetailsPage: React.FC = () => {
             <div>
               <p className="text-sm text-gray-600">معرف العرض</p>
               <Link to={`/quotations/${acceptedQuotation.id}`} className="text-blue-600 hover:underline">
-                {acceptedQuotation.id}
+                {getQuotationDisplayNumber(acceptedQuotation)}
               </Link>
             </div>
             <div>
@@ -379,12 +382,9 @@ export const QuickServiceOrderDetailsPage: React.FC = () => {
               <p className="text-[#111111] font-semibold text-lg">{formatCurrency(acceptedQuotation.price)}</p>
             </div>
             <div>
-              <p className="text-sm text-gray-600">المدة</p>
+              <p className="text-sm text-gray-600">مدة العرض المقبول</p>
               <p className="text-[#111111]">
-                {typeof acceptedQuotation.duration === 'string' 
-                  ? acceptedQuotation.duration 
-                  : `${acceptedQuotation.duration} ${acceptedQuotation.duration === 1 ? 'ساعة' : 'ساعة'}`
-                }
+                {formatQuotationDurationForDisplay(acceptedQuotation.duration)}
               </p>
             </div>
             {/* المواد مشمولة - يحددها العميل في الطلب، ليس في العرض - hidden from offer */}

@@ -7,10 +7,10 @@ import { Modal } from '../components/Modal';
 import { Input } from '../components/Input';
 import { EmptyState } from '../components/EmptyState';
 import { adminApi } from '../services/api';
-import type { Invoice, Payment } from '../types';
+import type { Invoice, Payment, User } from '../types';
 import { InvoiceStatus, PaymentStatus } from '../types';
 import { mockUsers, mockProjects, mockPayments, mockContracts } from '../mock/data';
-import { formatDate, formatCurrency, formatDateTime, getInvoiceDisplayNumber } from '../utils/formatters';
+import { formatDate, formatCurrency, formatDateTime, getInvoiceDisplayNumber, getInternalDisplayRef } from '../utils/formatters';
 import { FileText, Image as ImageIcon, ArrowRight } from 'lucide-react';
 
 export const InvoiceDetailsPage: React.FC = () => {
@@ -150,12 +150,6 @@ export const InvoiceDetailsPage: React.FC = () => {
             <p className="text-sm text-gray-600 mb-1">رقم الفاتورة</p>
             <p className="text-[#111111] font-medium">{getInvoiceDisplayNumber(invoice)}</p>
           </div>
-          {/^[a-f0-9]{24}$/i.test(invoice.id) && (
-            <div>
-              <p className="text-sm text-gray-600 mb-1">معرف النظام</p>
-              <p className="text-[#111111] font-mono text-sm break-all">{invoice.id}</p>
-            </div>
-          )}
           <div>
             <p className="text-sm text-gray-600 mb-1">العنوان</p>
             <p className="text-[#111111] font-medium">{invoice.title}</p>
@@ -306,8 +300,8 @@ export const InvoiceDetailsPage: React.FC = () => {
                 </Link>
               </div>
               <div>
-                <p className="text-sm text-gray-600">معرف المقاول</p>
-                <p className="text-[#111111]">{contractor.id}</p>
+                <p className="text-sm text-gray-600">رقم الهوية</p>
+                <p className="text-[#111111]">{(contractor as User).pid?.trim() || '—'}</p>
               </div>
               <div>
                 <p className="text-sm text-gray-600">رقم الجوال</p>
@@ -339,8 +333,8 @@ export const InvoiceDetailsPage: React.FC = () => {
                 </Link>
               </div>
               <div>
-                <p className="text-sm text-gray-600">معرف العميل</p>
-                <p className="text-[#111111]">{client.id}</p>
+                <p className="text-sm text-gray-600">رقم الهوية</p>
+                <p className="text-[#111111]">{client.pid?.trim() || '—'}</p>
               </div>
               <div>
                 <p className="text-sm text-gray-600">رقم الجوال</p>
@@ -371,7 +365,7 @@ export const InvoiceDetailsPage: React.FC = () => {
                         to={`/payments/${payment.id}`}
                         className="font-medium text-blue-600 hover:underline"
                       >
-                        {payment.referenceNumber || payment.id}
+                        {payment.referenceNumber?.trim() || getInternalDisplayRef(payment.id, 'PAY')}
                       </Link>
                       <StatusBadge status={payment.status} />
                     </div>

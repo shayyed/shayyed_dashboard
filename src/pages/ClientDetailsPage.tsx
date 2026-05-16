@@ -7,9 +7,8 @@ import { EmptyState } from '../components/EmptyState';
 import { Table } from '../components/Table';
 import { ArrowRight } from 'lucide-react';
 import { adminApi } from '../services/api';
-import type { ClientProfile, ServiceRequest } from '../types';
-import { mockRequests, mockQuickServiceOrders } from '../mock/data';
-import { formatDate, formatSar } from '../utils/formatters';
+import type { ClientProfile, QuickServiceOrder, ServiceRequest } from '../types';
+import { formatDate, getRequestDisplayNumber } from '../utils/formatters';
 
 export const ClientDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -17,44 +16,48 @@ export const ClientDetailsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [client, setClient] = useState<ClientProfile | null>(null);
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
-  const [quickOrders, setQuickOrders] = useState<any[]>([]);
+  const [quickOrders, setQuickOrders] = useState<QuickServiceOrder[]>([]);
   const [activeRequestType, setActiveRequestType] = useState<'regular' | 'quick'>('regular');
 
   useEffect(() => {
-    if (id) {
-      loadClient();
-      loadRelatedData();
-    }
-  }, [id]);
-
-  const loadClient = async () => {
-    try {
-      setLoading(true);
-      const data = await adminApi.getClient(id!);
-      if (data) {
-        setClient(data);
-      }
-    } catch (error) {
-      console.error('Load error:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadRelatedData = async () => {
     if (!id) return;
-    try {
-      const clientRequests = mockRequests.filter(r => r.clientId === id);
-      const clientQuickOrders = mockQuickServiceOrders.filter(q => q.clientId === id);
-
-      setRequests(clientRequests.slice(0, 10));
-      setQuickOrders(clientQuickOrders.slice(0, 10));
-    } catch (error) {
-      console.error('Load related data error:', error);
-    }
-  };
-
-
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        const clientData = await adminApi.getClient(id);
+        if (cancelled) return;
+        setClient(clientData);
+        try {
+          const [reqs, quick] = await Promise.all([
+            adminApi.listRequests({ clientId: id, limit: 10 }),
+            adminApi.listQuickServiceOrders({ clientId: id, limit: 10 }),
+          ]);
+          if (cancelled) return;
+          setRequests(reqs);
+          setQuickOrders(quick);
+        } catch (listErr) {
+          console.error('Load client requests error:', listErr);
+          if (!cancelled) {
+            setRequests([]);
+            setQuickOrders([]);
+          }
+        }
+      } catch (error) {
+        console.error('Load client error:', error);
+        if (!cancelled) {
+          setClient(null);
+          setRequests([]);
+          setQuickOrders([]);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
   if (loading) {
     return (
@@ -87,7 +90,9 @@ export const ClientDetailsPage: React.FC = () => {
       key: 'id',
       label: 'رقم الطلب',
       render: (request: ServiceRequest) => (
-        <span className="text-[#111111] font-medium">{request.id}</span>
+        <span className="text-[#111111] font-medium">
+          {getRequestDisplayNumber(request.id, false)}
+        </span>
       ),
     },
     {
@@ -108,7 +113,9 @@ export const ClientDetailsPage: React.FC = () => {
       key: 'location',
       label: 'الموقع',
       render: (request: ServiceRequest) => (
-        <span className="text-[#666666]">{request.location.city} - {request.location.district}</span>
+        <span className="text-[#666666]">
+          {request.location.city} - {request.location.district}
+        </span>
       ),
     },
     {
@@ -133,7 +140,9 @@ export const ClientDetailsPage: React.FC = () => {
     {
       key: 'createdAt',
       label: 'تاريخ الإنشاء',
-      render: (request: ServiceRequest) => <span className="text-[#666666]">{formatDate(request.createdAt)}</span>,
+      render: (request: ServiceRequest) => (
+        <span className="text-[#666666]">{formatDate(request.createdAt)}</span>
+      ),
     },
     {
       key: 'actions',
@@ -145,7 +154,6 @@ export const ClientDetailsPage: React.FC = () => {
       ),
     },
   ];
-
 
   return (
     <div className="space-y-6">
@@ -172,10 +180,6 @@ export const ClientDetailsPage: React.FC = () => {
             <p className="text-[#111111] font-medium">{client.pid || '—'}</p>
           </div>
           <div>
-            <p className="text-sm text-[#666666] mb-1">معرف الحساب</p>
-            <p className="text-[#111111] font-medium text-sm break-all">{client.id}</p>
-          </div>
-          <div>
             <p className="text-sm text-[#666666] mb-1">رقم الجوال</p>
             <p className="text-[#111111] font-medium">{client.phone}</p>
           </div>
@@ -190,12 +194,12 @@ export const ClientDetailsPage: React.FC = () => {
         </div>
       </Card>
 
-
       {/* Section Title: الطلبات */}
       <div className="mb-4">
         <h2 className="text-xl font-semibold text-[#111111] mb-4">الطلبات</h2>
         <div className="flex gap-2 mb-4">
           <button
+            type="button"
             onClick={() => setActiveRequestType('regular')}
             className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
               activeRequestType === 'regular'
@@ -206,6 +210,7 @@ export const ClientDetailsPage: React.FC = () => {
             المناقصات ({requests.length})
           </button>
           <button
+            type="button"
             onClick={() => setActiveRequestType('quick')}
             className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
               activeRequestType === 'quick'
@@ -222,7 +227,7 @@ export const ClientDetailsPage: React.FC = () => {
       {activeRequestType === 'regular' && (
         <Card
           id="regular-requests"
-          title="المناقصات (آخر 10)"
+          title="المناقصات"
           action={
             <Link to={`/requests?client=${client.id}`}>
               <Button variant="secondary">عرض الكل</Button>
@@ -241,7 +246,7 @@ export const ClientDetailsPage: React.FC = () => {
       {activeRequestType === 'quick' && (
         <Card
           id="quick-requests"
-          title="الخدمات السريعة (آخر 10)"
+          title="الخدمات السريعة"
           action={
             <Link to={`/requests?client=${client.id}&type=quick`}>
               <Button variant="secondary">عرض الكل</Button>
@@ -249,93 +254,96 @@ export const ClientDetailsPage: React.FC = () => {
           }
         >
           {quickOrders.length > 0 ? (
-            <Table 
+            <Table
               columns={[
                 {
                   key: 'id',
                   label: 'رقم الطلب',
-                  render: (order: any) => (
-                    <span className="text-[#111111] font-medium">{order.id}</span>
+                  render: (order: QuickServiceOrder) => (
+                    <span className="text-[#111111] font-medium">
+                      {getRequestDisplayNumber(order.id, true)}
+                    </span>
                   ),
                 },
                 {
                   key: 'title',
                   label: 'العنوان',
-                  render: (order: any) => (
+                  render: (order: QuickServiceOrder) => (
                     <span className="text-[#111111] font-medium">{order.title || order.serviceTitle}</span>
                   ),
                 },
                 {
                   key: 'serviceTitle',
                   label: 'اسم الخدمة',
-                  render: (order: any) => (
+                  render: (order: QuickServiceOrder) => (
                     <span className="text-[#666666]">{order.serviceTitle}</span>
                   ),
                 },
                 {
                   key: 'duration',
                   label: 'المدة',
-                  render: (order: any) => (
+                  render: (order: QuickServiceOrder) => (
                     <span className="text-[#666666]">{order.duration}</span>
                   ),
                 },
                 {
                   key: 'location',
                   label: 'الموقع',
-                  render: (order: any) => (
-                    <span className="text-[#666666]">{order.location?.city} - {order.location?.district}</span>
+                  render: (order: QuickServiceOrder) => (
+                    <span className="text-[#666666]">
+                      {order.location?.city} - {order.location?.district}
+                    </span>
                   ),
                 },
                 {
                   key: 'contractorName',
                   label: 'المقاول',
-                  render: (order: any) => (
+                  render: (order: QuickServiceOrder) =>
                     order.contractorName ? (
                       <span className="text-[#111111] font-medium">{order.contractorName}</span>
                     ) : (
                       <span className="text-[#666666]">-</span>
-                    )
-                  ),
+                    ),
                 },
                 {
                   key: 'urgency',
                   label: 'الاستعجال',
-                  render: (order: any) => (
+                  render: (order: QuickServiceOrder) =>
                     order.urgency ? (
                       <StatusBadge status={order.urgency === 'urgent' ? 'urgent' : 'normal'} />
                     ) : (
                       <span className="text-[#666666]">-</span>
-                    )
-                  ),
+                    ),
                 },
                 {
                   key: 'status',
                   label: 'الحالة',
-                  render: (order: any) => <StatusBadge status={order.status} />,
+                  render: (order: QuickServiceOrder) => <StatusBadge status={order.status} />,
                 },
                 {
                   key: 'createdAt',
                   label: 'تاريخ الإنشاء',
-                  render: (order: any) => <span className="text-[#666666]">{formatDate(order.createdAt)}</span>,
+                  render: (order: QuickServiceOrder) => (
+                    <span className="text-[#666666]">{formatDate(order.createdAt)}</span>
+                  ),
                 },
                 {
                   key: 'actions',
                   label: 'الإجراءات',
-                  render: (order: any) => (
+                  render: (order: QuickServiceOrder) => (
                     <Link to={`/requests/quick/${order.id}`}>
                       <Button variant="secondary">التفاصيل</Button>
                     </Link>
                   ),
                 },
-              ]} 
-              data={quickOrders} 
+              ]}
+              data={quickOrders}
             />
           ) : (
             <EmptyState title="لا توجد طلبات خدمات سريعة" />
           )}
         </Card>
       )}
-
     </div>
   );
 };

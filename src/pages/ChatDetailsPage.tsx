@@ -4,10 +4,10 @@ import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { EmptyState } from '../components/EmptyState';
 import { adminApi } from '../services/api';
-import type { ChatThread, ChatMessage } from '../types';
+import type { ChatThread, ChatMessage, ContractorProfile } from '../types';
 import { UserRole } from '../types';
 import { mockUsers, mockProjects, mockRequests, mockInvoices, mockQuickServiceOrders } from '../mock/data';
-import { formatDate, formatDateTime } from '../utils/formatters';
+import { formatDate, formatDateTime, getInternalDisplayRef, getRequestDisplayNumber, getProjectDisplayNumber, getInvoiceDisplayNumber } from '../utils/formatters';
 import { FileText, Image as ImageIcon, ArrowRight } from 'lucide-react';
 
 export const ChatDetailsPage: React.FC = () => {
@@ -126,20 +126,24 @@ export const ChatDetailsPage: React.FC = () => {
 
   const getRelatedEntityTitle = () => {
     if (thread.relatedType === 'project') {
-      const project = mockProjects.find(p => p.id === thread.relatedId);
+      const project = mockProjects.find((p) => p.id === thread.relatedId);
       if (project) {
-        const request = mockRequests.find(r => r.id === project.requestId);
+        const request = mockRequests.find((r) => r.id === project.requestId);
         if (request) return request.title;
+        return project.title;
       }
-      return project ? project.title : thread.relatedId;
-    } else if (thread.relatedType === 'request') {
-      const request = mockRequests.find(r => r.id === thread.relatedId);
-      return request ? request.title : thread.relatedId;
-    } else if (thread.relatedType === 'invoice') {
-      const invoice = mockInvoices.find(i => i.id === thread.relatedId);
-      return invoice ? invoice.title : thread.relatedId;
+      return getProjectDisplayNumber(thread.relatedId);
     }
-    return thread.relatedId;
+    if (thread.relatedType === 'request') {
+      const request = mockRequests.find((r) => r.id === thread.relatedId);
+      const isQuick = Boolean(mockQuickServiceOrders.find((q) => q.id === thread.relatedId));
+      return request ? request.title : getRequestDisplayNumber(thread.relatedId, isQuick);
+    }
+    if (thread.relatedType === 'invoice') {
+      const invoice = mockInvoices.find((i) => i.id === thread.relatedId);
+      return invoice ? invoice.title : getInvoiceDisplayNumber({ id: thread.relatedId });
+    }
+    return getInternalDisplayRef(thread.relatedId, 'REF');
   };
 
   // Sort messages by date (oldest first)
@@ -155,7 +159,9 @@ export const ChatDetailsPage: React.FC = () => {
           العودة إلى المحادثات
         </Button>
         <h1 className="text-2xl font-semibold text-[#111111]">المحادثة</h1>
-        <p className="text-sm text-gray-600 mt-1">معرف المحادثة: {thread.id}</p>
+        <p className="text-sm text-gray-600 mt-1">
+          معرف المحادثة: {getInternalDisplayRef(thread.id, 'THR')}
+        </p>
       </div>
 
       {/* Thread Info */}
@@ -163,7 +169,7 @@ export const ChatDetailsPage: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <p className="text-sm text-gray-600 mb-1">معرف المحادثة</p>
-            <p className="text-[#111111] font-medium">{thread.id}</p>
+            <p className="text-[#111111] font-medium">{getInternalDisplayRef(thread.id, 'THR')}</p>
           </div>
           <div>
             <p className="text-sm text-gray-600 mb-1">نوع الطلب</p>
@@ -204,8 +210,8 @@ export const ChatDetailsPage: React.FC = () => {
                 </Link>
               </div>
               <div>
-                <p className="text-sm text-gray-600">معرف العميل</p>
-                <p className="text-[#111111]">{client.id}</p>
+                <p className="text-sm text-gray-600">رقم الهوية</p>
+                <p className="text-[#111111]">{client.pid?.trim() || '—'}</p>
               </div>
               <div>
                 <p className="text-sm text-gray-600">رقم الجوال</p>
@@ -228,19 +234,19 @@ export const ChatDetailsPage: React.FC = () => {
                 </Link>
               </div>
               <div>
-                <p className="text-sm text-gray-600">معرف المقاول</p>
-                <p className="text-[#111111]">{contractor.id}</p>
+                <p className="text-sm text-gray-600">رقم الهوية</p>
+                <p className="text-[#111111]">{contractor.pid?.trim() || '—'}</p>
               </div>
               <div>
                 <p className="text-sm text-gray-600">رقم الجوال</p>
                 <p className="text-[#111111]">{contractor.phone}</p>
               </div>
-              {'companyName' in contractor && contractor.companyName && (
+              {(contractor as ContractorProfile).companyName?.trim() ? (
                 <div>
                   <p className="text-sm text-gray-600">اسم الشركة</p>
-                  <p className="text-[#111111]">{contractor.companyName}</p>
+                  <p className="text-[#111111]">{(contractor as ContractorProfile).companyName}</p>
                 </div>
-              )}
+              ) : null}
             </div>
           </Card>
         )}

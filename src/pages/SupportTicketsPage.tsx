@@ -11,7 +11,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { adminApi } from '../services/api';
 import type { SupportTicket } from '../types';
 import { UserRole } from '../types';
-import { formatDate } from '../utils/formatters';
+import { formatDate, getSupportTicketDisplayNumber } from '../utils/formatters';
 
 const STATUS_TABS = [
   { label: 'الكل', value: 'all' },
@@ -78,11 +78,17 @@ export const SupportTicketsPage: React.FC = () => {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter((ticket) => {
         const un = (ticket.userName || '').toLowerCase();
+        const ref = getSupportTicketDisplayNumber({
+          id: ticket.id,
+          ticketNumber: ticket.ticketNumber,
+        }).toLowerCase();
         return (
           ticket.id.toLowerCase().includes(query) ||
+          ref.includes(query) ||
           ticket.title.toLowerCase().includes(query) ||
           ticket.description.toLowerCase().includes(query) ||
-          un.includes(query)
+          un.includes(query) ||
+          (ticket.userPid || '').toLowerCase().includes(query)
         );
       });
     }
@@ -136,6 +142,15 @@ export const SupportTicketsPage: React.FC = () => {
   };
 
   const columns = [
+    {
+      key: 'ticketRef',
+      label: 'معرف التذكرة',
+      render: (ticket: SupportTicket) => (
+        <span className="text-sm font-medium text-gray-800">
+          {getSupportTicketDisplayNumber({ id: ticket.id, ticketNumber: ticket.ticketNumber })}
+        </span>
+      ),
+    },
     {
       key: 'title',
       label: 'العنوان',

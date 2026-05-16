@@ -6,8 +6,8 @@ import { Modal } from '../components/Modal';
 import { EmptyState } from '../components/EmptyState';
 import { adminApi } from '../services/api';
 import type { Category } from '../types';
-import { mockServiceGroups, mockSubcategories, mockRequests } from '../mock/data';
-import { formatDate, formatDateTime } from '../utils/formatters';
+import { mockServiceGroups, mockRequests } from '../mock/data';
+import { formatDateTime, getInternalDisplayRef } from '../utils/formatters';
 
 export const CategoryDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -42,7 +42,7 @@ export const CategoryDetailsPage: React.FC = () => {
   };
 
   const getGroupName = (groupId: string) => {
-    return mockServiceGroups.find(g => g.id === groupId)?.name || groupId;
+    return mockServiceGroups.find((g) => g.id === groupId)?.name || getInternalDisplayRef(groupId, 'GRP');
   };
 
   const getRequestsCount = () => {
@@ -81,7 +81,9 @@ export const CategoryDetailsPage: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-[#111111]">تفاصيل الفئة</h1>
-          <p className="text-sm text-gray-600 mt-1">معرف الفئة: {category.id}</p>
+          <p className="text-sm text-gray-600 mt-1">
+            معرف الفئة: {getInternalDisplayRef(category.id, 'CAT')}
+          </p>
         </div>
         <div className="flex gap-2">
           <Button variant="primary" onClick={() => setShowEditModal(true)}>
@@ -98,7 +100,7 @@ export const CategoryDetailsPage: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <p className="text-sm text-gray-600 mb-1">معرف الفئة</p>
-            <p className="text-[#111111] font-medium">{category.id}</p>
+            <p className="text-[#111111] font-medium">{getInternalDisplayRef(category.id, 'CAT')}</p>
           </div>
           <div>
             <p className="text-sm text-gray-600 mb-1">الاسم</p>
@@ -115,7 +117,7 @@ export const CategoryDetailsPage: React.FC = () => {
           </div>
           <div>
             <p className="text-sm text-gray-600 mb-1">معرف المجموعة</p>
-            <p className="text-[#111111]">{category.groupId}</p>
+            <p className="text-[#111111]">{getInternalDisplayRef(category.groupId, 'GRP')}</p>
           </div>
           <div>
             <p className="text-sm text-gray-600 mb-1">ترتيب العرض</p>

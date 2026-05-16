@@ -1,19 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { ArrowRight } from 'lucide-react';
 import { adminApi } from '../services/api';
-import type { Contract, ContractorProfile, ServiceRequest, Project } from '../types';
-import { formatSar, formatDate } from '../utils/formatters';
+import type { Contract, ContractorProfile } from '../types';
+import { formatSar, formatDate, getContractDisplayNumber, getRequestDisplayNumber } from '../utils/formatters';
 
 export const ContractDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [contract, setContract] = useState<Contract | null>(null);
-  const [relatedRequest, setRelatedRequest] = useState<ServiceRequest | null>(null);
-  const [relatedProject, setRelatedProject] = useState<Project | null>(null);
   const [client, setClient] = useState<{ name: string; phone?: string } | null>(null);
   const [contractor, setContractor] = useState<ContractorProfile | null>(null);
 
@@ -29,15 +27,7 @@ export const ContractDetailsPage: React.FC = () => {
       setLoading(true);
       const found = await adminApi.getContract(id);
       setContract(found);
-      if (found?.requestId) {
-        const requests = await adminApi.listRequests();
-        setRelatedRequest(requests.find((r) => r.id === found.requestId) || null);
-      } else {
-        setRelatedRequest(null);
-      }
       if (found) {
-        const projects = await adminApi.listProjects();
-        setRelatedProject(projects.find((p) => p.contractId === found.id) || null);
         const [c, co] = await Promise.all([
           adminApi.getClient(found.clientId),
           adminApi.getContractor(found.contractorId),
@@ -97,11 +87,8 @@ export const ContractDetailsPage: React.FC = () => {
           <div className="text-center space-y-2">
             <h2 className="text-2xl font-bold text-[#111111]">عقد تنفيذ أعمال</h2>
             <p className="text-[#111111] font-medium">
-              رقم العقد: {contract.contractNumber || contract.id}
+              رقم العقد: {getContractDisplayNumber(contract)}
             </p>
-            {contract.contractNumber && contract.contractNumber !== contract.id && (
-              <p className="text-xs text-[#999999]">معرّف النظام: {contract.id}</p>
-            )}
             <p className="text-[#666666]">تاريخ العقد: {formatDate(contract.createdAt)}</p>
           </div>
         </Card>
@@ -112,15 +99,15 @@ export const ContractDetailsPage: React.FC = () => {
           <div className="space-y-3">
             <div className="flex items-start gap-4">
               <span className="text-[#666666] min-w-[140px]">الطرف الأول - العميل:</span>
-              <span className="text-[#111111]">{client?.name || contract.clientId}</span>
+              <span className="text-[#111111]">{client?.name || '—'}</span>
             </div>
             <div className="flex items-start gap-4">
               <span className="text-[#666666] min-w-[140px]">الطرف الثاني - المقاول:</span>
-              <span className="text-[#111111]">{contractorCompanyName || contractor?.name || contract.contractorId}</span>
+              <span className="text-[#111111]">{contractorCompanyName || contractor?.name || '—'}</span>
             </div>
             <div className="flex items-start gap-4">
               <span className="text-[#666666] min-w-[140px]">رقم الطلب:</span>
-              <span className="text-[#111111]">{contract.requestId}</span>
+              <span className="text-[#111111]">{getRequestDisplayNumber(contract.requestId, false)}</span>
             </div>
           </div>
         </Card>

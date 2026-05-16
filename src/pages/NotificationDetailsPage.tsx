@@ -5,7 +5,7 @@ import { EmptyState } from '../components/EmptyState';
 import { adminApi } from '../services/api';
 import type { Notification } from '../types';
 import { UserRole } from '../types';
-import { formatDateTime } from '../utils/formatters';
+import { formatDateTime, getInternalDisplayRef } from '../utils/formatters';
 import { Button } from '../components/Button';
 import { ArrowRight } from 'lucide-react';
 
@@ -100,14 +100,16 @@ export const NotificationDetailsPage: React.FC = () => {
           العودة إلى الإشعارات
         </Button>
         <h1 className="text-2xl font-semibold text-[#111111]">تفاصيل الإشعار</h1>
-        <p className="text-sm text-gray-600 mt-1">معرف الإشعار: {notification.id}</p>
+        <p className="text-sm text-gray-600 mt-1">
+          معرف الإشعار: {getInternalDisplayRef(notification.id, 'NOTI')}
+        </p>
       </div>
 
       <Card title="معلومات الإشعار">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <p className="text-sm text-gray-600 mb-1">معرف الإشعار</p>
-            <p className="text-[#111111] font-medium">{notification.id}</p>
+            <p className="text-[#111111] font-medium">{getInternalDisplayRef(notification.id, 'NOTI')}</p>
           </div>
           <div>
             <p className="text-sm text-gray-600 mb-1">العنوان</p>

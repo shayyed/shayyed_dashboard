@@ -7,7 +7,7 @@ import { EmptyState } from '../components/EmptyState';
 import { adminApi } from '../services/api';
 import type { QuickService } from '../types';
 import { mockQuickServiceOrders, mockUsers } from '../mock/data';
-import { formatDate, formatDateTime, formatSar } from '../utils/formatters';
+import { formatDateTime, formatSar, getInternalDisplayRef, getRequestDisplayNumber } from '../utils/formatters';
 
 export const QuickServiceDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -117,7 +117,9 @@ export const QuickServiceDetailsPage: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-[#111111]">تفاصيل الخدمة السريعة</h1>
-          <p className="text-sm text-gray-600 mt-1">معرف الخدمة: {service.id}</p>
+          <p className="text-sm text-gray-600 mt-1">
+            معرف الخدمة: {getInternalDisplayRef(service.id, 'QSRV')}
+          </p>
         </div>
         <div className="flex gap-2">
           <Button variant="primary" onClick={() => setShowEditModal(true)}>
@@ -137,7 +139,7 @@ export const QuickServiceDetailsPage: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <p className="text-sm text-gray-600 mb-1">معرف الخدمة</p>
-            <p className="text-[#111111] font-medium">{service.id}</p>
+            <p className="text-[#111111] font-medium">{getInternalDisplayRef(service.id, 'QSRV')}</p>
           </div>
           <div>
             <p className="text-sm text-gray-600 mb-1">العنوان</p>
@@ -238,7 +240,7 @@ export const QuickServiceDetailsPage: React.FC = () => {
                         to={`/requests/quick/${order.id}`}
                         className="text-blue-600 hover:underline font-medium text-lg mb-2 block"
                       >
-                        {order.title || order.serviceTitle}
+                        {order.title || order.serviceTitle || getRequestDisplayNumber(order.id, true)}
                       </Link>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                         <div>
@@ -247,7 +249,7 @@ export const QuickServiceDetailsPage: React.FC = () => {
                             to={`/users/clients/${order.clientId}`}
                             className="text-blue-600 hover:underline mr-2"
                           >
-                            {client?.name || order.clientId}
+                            {client?.name || 'عرض العميل'}
                           </Link>
                         </div>
                         {order.contractorId && (
@@ -257,7 +259,7 @@ export const QuickServiceDetailsPage: React.FC = () => {
                               to={`/users/contractors/${order.contractorId}`}
                               className="text-blue-600 hover:underline mr-2"
                             >
-                              {order.contractorName || order.contractorId}
+                              {order.contractorName || 'عرض المقاول'}
                             </Link>
                           </div>
                         )}

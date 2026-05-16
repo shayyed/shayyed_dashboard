@@ -12,7 +12,7 @@ import { adminApi } from '../services/api';
 import type { ServiceRequest, User, Quotation, Project, Contract } from '../types';
 import { RequestStatus, QuotationStatus } from '../types';
 import { mockQuotations, mockProjects, mockChatThreads, mockContracts } from '../mock/data';
-import { formatDate, formatDateTime, formatSar } from '../utils/formatters';
+import { formatDate, formatDateTime, formatSar, getRequestDisplayNumber, getInternalDisplayRef, getQuotationDisplayNumber, getContractDisplayNumber, getProjectDisplayNumber, getRegularRequestDurationDisplay } from '../utils/formatters';
 
 export const RegularRequestDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -122,7 +122,7 @@ export const RegularRequestDetailsPage: React.FC = () => {
       label: 'رقم العرض',
       render: (item: any) => (
         <Link to={`/quotations/${item.id}`} className="text-blue-600 hover:underline">
-          {item.quotationNumber || item.id}
+          {getQuotationDisplayNumber(item)}
         </Link>
       ),
     },
@@ -192,8 +192,8 @@ export const RegularRequestDetailsPage: React.FC = () => {
       <Card title="معلومات الطلب">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <p className="text-sm text-gray-600">معرف الطلب</p>
-            <p className="text-[#111111]">{request.id}</p>
+            <p className="text-sm text-gray-600">رقم الطلب</p>
+            <p className="text-[#111111]">{getRequestDisplayNumber(request.id, false)}</p>
           </div>
           <div>
             <p className="text-sm text-gray-600">العنوان</p>
@@ -206,7 +206,7 @@ export const RegularRequestDetailsPage: React.FC = () => {
           <div>
             <p className="text-sm text-gray-600">معرف الخدمة</p>
             <Link to={`/services/subcategories/${request.serviceId}`} className="text-blue-600 hover:underline">
-              {request.serviceId}
+              {getInternalDisplayRef(request.serviceId, 'SUB')}
             </Link>
           </div>
           <div>
@@ -214,9 +214,9 @@ export const RegularRequestDetailsPage: React.FC = () => {
             <p className="text-[#111111]">{request.serviceName}</p>
           </div>
           <div>
-            <p className="text-sm text-gray-600">معرف العميل</p>
+            <p className="text-sm text-gray-600">العميل</p>
             <Link to={`/users/clients/${request.clientId}`} className="text-blue-600 hover:underline">
-              {request.clientId}
+              {(client?.name && client.name.trim()) || (request.clientName && request.clientName.trim()) || 'عرض بيانات العميل'}
             </Link>
           </div>
           <div>
@@ -291,12 +291,10 @@ export const RegularRequestDetailsPage: React.FC = () => {
               <p className="text-[#111111]">{formatDate(request.startDate)}</p>
             </div>
           )}
-          {request.expectedDuration && (
-            <div>
-              <p className="text-sm text-gray-600">المدة المتوقعة</p>
-              <p className="text-[#111111]">{request.expectedDuration}</p>
-            </div>
-          )}
+          <div>
+            <p className="text-sm text-gray-600">المدة</p>
+            <p className="text-[#111111]">{getRegularRequestDurationDisplay(request)}</p>
+          </div>
           <div>
             <p className="text-sm text-gray-600">السماح بزيارات الموقع</p>
             <p className="text-[#111111]">{request.allowSiteVisits ? 'نعم' : 'لا'}</p>
@@ -366,7 +364,7 @@ export const RegularRequestDetailsPage: React.FC = () => {
             </div>
             <div>
               <p className="text-sm text-gray-600">رقم الهوية الوطنية</p>
-              <p className="text-[#111111]">{client.id}</p>
+              <p className="text-[#111111]">{client.pid?.trim() || '—'}</p>
             </div>
           </div>
         </Card>
@@ -444,7 +442,7 @@ export const RegularRequestDetailsPage: React.FC = () => {
             <div>
               <p className="text-sm text-gray-600 mb-1">رقم العقد</p>
               <Link to={`/contracts/${contract.id}`} className="text-blue-600 hover:underline">
-                {contract.contractNumber || contract.id}
+                {getContractDisplayNumber(contract)}
               </Link>
             </div>
             <div>
@@ -468,7 +466,7 @@ export const RegularRequestDetailsPage: React.FC = () => {
               <div>
                 <p className="text-sm text-gray-600 mb-1">رقم المشروع</p>
                 <Link to={`/projects/${project.id}`} className="text-blue-600 hover:underline">
-                  {project.projectNumber || project.id}
+                  {project.projectNumber?.trim() || getProjectDisplayNumber(project.id)}
                 </Link>
               </div>
               <div>

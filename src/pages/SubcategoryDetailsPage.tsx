@@ -7,7 +7,7 @@ import { EmptyState } from '../components/EmptyState';
 import { adminApi } from '../services/api';
 import type { Subcategory } from '../types';
 import { mockCategories, mockServiceGroups, mockRequests, mockUsers } from '../mock/data';
-import { formatDate, formatDateTime } from '../utils/formatters';
+import { formatDateTime, getInternalDisplayRef } from '../utils/formatters';
 
 export const SubcategoryDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -45,7 +45,7 @@ export const SubcategoryDetailsPage: React.FC = () => {
   };
 
   const getCategoryName = (categoryId: string) => {
-    return mockCategories.find(c => c.id === categoryId)?.name || categoryId;
+    return mockCategories.find((c) => c.id === categoryId)?.name || getInternalDisplayRef(categoryId, 'CAT');
   };
 
   const getGroupName = (categoryId: string) => {
@@ -112,7 +112,9 @@ export const SubcategoryDetailsPage: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-[#111111]">تفاصيل الفئة الفرعية</h1>
-          <p className="text-sm text-gray-600 mt-1">معرف الفئة الفرعية: {subcategory.id}</p>
+          <p className="text-sm text-gray-600 mt-1">
+            معرف الفئة الفرعية: {getInternalDisplayRef(subcategory.id, 'SUB')}
+          </p>
         </div>
         <div className="flex gap-2">
           <Button variant="primary" onClick={() => setShowEditModal(true)}>
@@ -129,7 +131,7 @@ export const SubcategoryDetailsPage: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <p className="text-sm text-gray-600 mb-1">معرف الفئة الفرعية</p>
-            <p className="text-[#111111] font-medium">{subcategory.id}</p>
+            <p className="text-[#111111] font-medium">{getInternalDisplayRef(subcategory.id, 'SUB')}</p>
           </div>
           <div>
             <p className="text-sm text-gray-600 mb-1">الاسم</p>
@@ -161,7 +163,7 @@ export const SubcategoryDetailsPage: React.FC = () => {
           </div>
           <div>
             <p className="text-sm text-gray-600 mb-1">معرف الفئة</p>
-            <p className="text-[#111111]">{subcategory.categoryId}</p>
+            <p className="text-[#111111]">{getInternalDisplayRef(subcategory.categoryId, 'CAT')}</p>
           </div>
           <div>
             <p className="text-sm text-gray-600 mb-1">المجموعة</p>
@@ -249,7 +251,7 @@ export const SubcategoryDetailsPage: React.FC = () => {
                             to={`/users/clients/${request.clientId}`}
                             className="text-blue-600 hover:underline mr-2"
                           >
-                            {client?.name || request.clientId}
+                            {client?.name || 'عرض العميل'}
                           </Link>
                         </div>
                         <div>

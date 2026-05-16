@@ -43,6 +43,7 @@ import {
 } from '../types';
 import { API_BASE_URL, API_KEY } from '../config/env';
 import { adminFetchJson } from './adminHttp';
+import { getSupportTicketDisplayNumber } from '../utils/formatters';
 import {
   mockUsers,
   mockContractors,
@@ -81,6 +82,10 @@ function mapAdminServiceRequest(r: Record<string, unknown>): ServiceRequest {
     materialsIncluded: r.materialsIncluded === true,
     startDate: r.startDate != null ? String(r.startDate) : undefined,
     expectedDuration: r.expectedDuration != null ? String(r.expectedDuration) : undefined,
+    executionDuration:
+      r.executionDuration !== undefined && r.executionDuration !== null && String(r.executionDuration).trim() !== ''
+        ? (typeof r.executionDuration === 'number' ? r.executionDuration : String(r.executionDuration))
+        : undefined,
     allowSiteVisits: r.allowSiteVisits === true,
     attachments: Array.isArray(r.attachments) ? (r.attachments as string[]) : [],
     notes: r.notes != null ? String(r.notes) : undefined,
@@ -126,7 +131,14 @@ export type AdminDashboardSummary = {
       status: string;
       response?: string;
     }>;
-    supportTickets: Array<{ id: string; title: string; createdAt: string; status: string }>;
+    supportTickets: Array<{
+      id: string;
+      ticketNumber?: string;
+      title: string;
+      createdAt: string;
+      /** `PENDING` = awaiting reply, `RESOLVED` = replied/closed */
+      status: string;
+    }>;
     paidInvoices: Array<{
       id: string;
       title: string;
@@ -390,6 +402,10 @@ function mapAdminComplaint(r: Record<string, unknown>): Complaint {
     projectReference: r.projectReference != null ? String(r.projectReference) : undefined,
     clientReference: r.clientReference != null ? String(r.clientReference) : undefined,
     contractorReference: r.contractorReference != null ? String(r.contractorReference) : undefined,
+    clientPid: r.clientPid != null ? String(r.clientPid) : undefined,
+    contractorPid: r.contractorPid != null ? String(r.contractorPid) : undefined,
+    clientPhone: r.clientPhone != null ? String(r.clientPhone) : undefined,
+    contractorPhone: r.contractorPhone != null ? String(r.contractorPhone) : undefined,
     respondedByName: r.respondedByName != null ? String(r.respondedByName) : undefined,
     updatedAt: r.updatedAt != null ? String(r.updatedAt) : undefined,
   };
@@ -492,6 +508,11 @@ function mapAdminProjectReport(r: Record<string, unknown>): ProjectReport {
 
 function mapAppSupportTicketRow(r: Record<string, unknown>): SupportTicket {
   const id = String(r.id);
+  const ticketNumber = getSupportTicketDisplayNumber({
+    id,
+    ticketNumber: r.ticketNumber != null ? String(r.ticketNumber) : undefined,
+  });
+  const userPid = r.userPid != null ? String(r.userPid).trim() : '';
   const message = String(r.message ?? '');
   const responseRaw = r.response != null ? String(r.response) : '';
   const response = responseRaw.trim();
@@ -519,6 +540,8 @@ function mapAppSupportTicketRow(r: Record<string, unknown>): SupportTicket {
       : UserRole.CLIENT;
   return {
     id,
+    ticketNumber,
+    userPid: userPid || undefined,
     userId: String(r.userId ?? ''),
     role,
     title: message.slice(0, 100) || 'تذكرة دعم',
@@ -639,12 +662,12 @@ export const adminApi = {
         `/admin/app-users/contractors/${encodeURIComponent(id)}`
       )) as Record<string, unknown>;
       const portfolio = Array.isArray(c.portfolio) ? c.portfolio : [];
-      const company = c.companyName != null ? String(c.companyName).trim() : '';
+      /** API `name` is person display name only; company stays in `companyName`. */
       const person = c.name != null ? String(c.name).trim() : '';
       return {
         id: String(c.id),
         phone: String(c.phone ?? ''),
-        name: company || person || String(c.name ?? ''),
+        name: person,
         email: c.email != null ? String(c.email) : undefined,
         pid: c.pid != null ? String(c.pid) : undefined,
         role: UserRole.CONTRACTOR,
@@ -759,10 +782,14 @@ export const adminApi = {
     }
   },
 
-  // Requests — engine `GET /admin/service-requests` (dashboard role)
-  listRequests: async (_filters?: unknown): Promise<ServiceRequest[]> => {
+  // Requests — engine `GET /admin/service-requests` (optional `clientId`, `contractorId`, `limit`)
+  listRequests: async (filters?: { clientId?: string; contractorId?: string; limit?: number }): Promise<ServiceRequest[]> => {
     try {
-      const data = (await adminFetchJson('/admin/service-requests?limit=200')) as {
+      const qs = new URLSearchParams();
+      qs.set('limit', String(filters?.limit ?? 200));
+      if (filters?.clientId?.trim()) qs.set('clientId', filters.clientId.trim());
+      if (filters?.contractorId?.trim()) qs.set('contractorId', filters.contractorId.trim());
+      const data = (await adminFetchJson(`/admin/service-requests?${qs}`)) as {
         items?: Record<string, unknown>[];
       };
       return (data.items || []).map(mapAdminServiceRequest);
@@ -772,9 +799,17 @@ export const adminApi = {
   },
 
   // Quick Service Orders — engine `GET /admin/quick-service-orders`
-  listQuickServiceOrders: async (): Promise<QuickServiceOrder[]> => {
+  listQuickServiceOrders: async (filters?: {
+    clientId?: string;
+    contractorId?: string;
+    limit?: number;
+  }): Promise<QuickServiceOrder[]> => {
     try {
-      const data = (await adminFetchJson('/admin/quick-service-orders?limit=200')) as {
+      const qs = new URLSearchParams();
+      qs.set('limit', String(filters?.limit ?? 200));
+      if (filters?.clientId?.trim()) qs.set('clientId', filters.clientId.trim());
+      if (filters?.contractorId?.trim()) qs.set('contractorId', filters.contractorId.trim());
+      const data = (await adminFetchJson(`/admin/quick-service-orders?${qs}`)) as {
         items?: Record<string, unknown>[];
       };
       return (data.items || []).map(mapAdminQuickOrder);

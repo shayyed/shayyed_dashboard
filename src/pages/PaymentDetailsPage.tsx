@@ -9,7 +9,7 @@ import { EmptyState } from '../components/EmptyState';
 import { adminApi } from '../services/api';
 import type { Payment, Invoice } from '../types';
 import { PaymentStatus, InvoiceStatus } from '../types';
-import { formatDate, formatCurrency, formatDateTime, getInvoiceDisplayNumber } from '../utils/formatters';
+import { formatDate, formatCurrency, formatDateTime, getInvoiceDisplayNumber, getInternalDisplayRef } from '../utils/formatters';
 import { ArrowRight } from 'lucide-react';
 
 export const PaymentDetailsPage: React.FC = () => {
@@ -129,7 +129,8 @@ export const PaymentDetailsPage: React.FC = () => {
   }
 
   const displayRef =
-    (payment.referenceNumber && payment.referenceNumber.trim()) || payment.id;
+    (payment.referenceNumber && payment.referenceNumber.trim()) ||
+    getInternalDisplayRef(payment.id, 'PAY');
   const milestoneText =
     (payment.milestoneLabel && payment.milestoneLabel.trim()) ||
     (invoice?.milestoneLabel && invoice.milestoneLabel.trim()) ||
@@ -151,7 +152,7 @@ export const PaymentDetailsPage: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <p className="text-sm text-gray-600 mb-1">معرف الدفع</p>
-            <p className="text-[#111111] font-medium">{payment.id}</p>
+            <p className="text-[#111111] font-medium">{getInternalDisplayRef(payment.id, 'PAY')}</p>
           </div>
           <div>
             <p className="text-sm text-gray-600 mb-1">رقم المرجع</p>
@@ -289,12 +290,8 @@ export const PaymentDetailsPage: React.FC = () => {
                   to={`/users/clients/${payment.clientId}`}
                   className="text-blue-600 hover:underline"
                 >
-                  {payment.clientName || invoice?.clientName || '—'}
+                  {payment.clientName || invoice?.clientName || 'عرض العميل'}
                 </Link>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">معرف العميل</p>
-                <p className="text-[#111111]">{payment.clientId}</p>
               </div>
             </div>
           </Card>
@@ -309,12 +306,8 @@ export const PaymentDetailsPage: React.FC = () => {
                   to={`/users/contractors/${payment.contractorId}`}
                   className="text-blue-600 hover:underline"
                 >
-                  {payment.contractorName || invoice?.contractorName || '—'}
+                  {payment.contractorName || invoice?.contractorName || 'عرض المقاول'}
                 </Link>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">معرف المقاول</p>
-                <p className="text-[#111111]">{payment.contractorId}</p>
               </div>
             </div>
           </Card>

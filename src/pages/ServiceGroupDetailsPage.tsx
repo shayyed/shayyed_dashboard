@@ -6,8 +6,8 @@ import { Modal } from '../components/Modal';
 import { EmptyState } from '../components/EmptyState';
 import { adminApi } from '../services/api';
 import type { ServiceGroup, Category } from '../types';
-import { mockCategories, mockSubcategories, mockRequests } from '../mock/data';
-import { formatDate, formatDateTime } from '../utils/formatters';
+import { mockSubcategories, mockRequests } from '../mock/data';
+import { formatDateTime, getInternalDisplayRef } from '../utils/formatters';
 
 export const ServiceGroupDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -88,7 +88,9 @@ export const ServiceGroupDetailsPage: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-[#111111]">تفاصيل مجموعة الخدمات</h1>
-          <p className="text-sm text-gray-600 mt-1">معرف المجموعة: {group.id}</p>
+          <p className="text-sm text-gray-600 mt-1">
+            معرف المجموعة: {getInternalDisplayRef(group.id, 'GRP')}
+          </p>
         </div>
         <div className="flex gap-2">
           <Button variant="primary" onClick={() => setShowEditModal(true)}>
@@ -105,7 +107,7 @@ export const ServiceGroupDetailsPage: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <p className="text-sm text-gray-600 mb-1">معرف المجموعة</p>
-            <p className="text-[#111111] font-medium">{group.id}</p>
+            <p className="text-[#111111] font-medium">{getInternalDisplayRef(group.id, 'GRP')}</p>
           </div>
           <div>
             <p className="text-sm text-gray-600 mb-1">الاسم</p>
@@ -199,7 +201,9 @@ export const ServiceGroupDetailsPage: React.FC = () => {
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                       <div>
                         <span className="text-gray-600">معرف الفئة:</span>
-                        <span className="text-[#111111] font-medium mr-2">{category.id}</span>
+                        <span className="text-[#111111] font-medium mr-2">
+                          {getInternalDisplayRef(category.id, 'CAT')}
+                        </span>
                       </div>
                       <div>
                         <span className="text-gray-600">عدد الفئات الفرعية:</span>

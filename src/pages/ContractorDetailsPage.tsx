@@ -7,10 +7,8 @@ import { EmptyState } from '../components/EmptyState';
 import { Table } from '../components/Table';
 import { Button } from '../components/Button';
 import { adminApi } from '../services/api';
-import type { ContractorProfile, Rating, PortfolioItem, QuickServiceOrder, ClientProfile, ServiceRequest } from '../types';
-import { mockQuickServiceOrders, mockRatings, mockPortfolioItems, mockClients, mockRequests, mockQuotations } from '../mock/data';
-import { QuickServiceOrderStatus } from '../types';
-import { formatDate, formatCurrency } from '../utils/formatters';
+import type { ContractorProfile, Rating, PortfolioItem, QuickServiceOrder, ServiceRequest } from '../types';
+import { formatDate, formatCurrency, getRequestDisplayNumber, formatQuotationDurationForDisplay, getRegularRequestDurationDisplay } from '../utils/formatters';
 
 export const ContractorDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -21,7 +19,6 @@ export const ContractorDetailsPage: React.FC = () => {
   const [portfolioItems, setPortfolioItems] = useState<PortfolioItem[]>([]);
   const [quickOrders, setQuickOrders] = useState<QuickServiceOrder[]>([]);
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
-  const [clients, setClients] = useState<ClientProfile[]>([]);
   const [activeRequestType, setActiveRequestType] = useState<'regular' | 'quick'>('regular');
 
 
@@ -31,9 +28,11 @@ export const ContractorDetailsPage: React.FC = () => {
     (async () => {
       try {
         setLoading(true);
-        const [data, ratingsData] = await Promise.all([
+        const [data, ratingsData, contractorRequests, contractorQuickOrders] = await Promise.all([
           adminApi.getContractor(id),
           adminApi.getContractorRatings(id),
+          adminApi.listRequests({ contractorId: id, limit: 50 }),
+          adminApi.listQuickServiceOrders({ contractorId: id, limit: 50 }),
         ]);
         if (cancelled) return;
         if (data) {
@@ -44,14 +43,8 @@ export const ContractorDetailsPage: React.FC = () => {
           setPortfolioItems([]);
         }
         setRatings(ratingsData);
-
-        const contractorQuickOrders = mockQuickServiceOrders.filter((q) => q.contractorId === id);
-        const contractorQuotations = mockQuotations.filter((q) => q.contractorId === id);
-        const requestIds = contractorQuotations.map((q) => q.requestId);
-        const contractorRequests = mockRequests.filter((r) => requestIds.includes(r.id));
-        setQuickOrders(contractorQuickOrders);
         setRequests(contractorRequests);
-        setClients(mockClients);
+        setQuickOrders(contractorQuickOrders);
       } catch (error) {
         console.error('Load error:', error);
       } finally {
@@ -106,14 +99,16 @@ export const ContractorDetailsPage: React.FC = () => {
     {
       key: 'clientId',
       label: 'المقيّم',
-      render: (item: { clientId: string; clientName: string }) => (
-        <Link 
-          to={`/users/clients/${item.clientId}`} 
-          className="text-blue-600 hover:underline"
-        >
-          {item.clientName || item.clientId}
-        </Link>
-      ),
+      render: (item: { clientId: string; clientName: string }) =>
+        item.clientName?.trim() ? (
+          <Link to={`/users/clients/${item.clientId}`} className="text-blue-600 hover:underline">
+            {item.clientName}
+          </Link>
+        ) : (
+          <Link to={`/users/clients/${item.clientId}`} className="text-blue-600 hover:underline">
+            عرض العميل
+          </Link>
+        ),
     },
     {
       key: 'createdAt',
@@ -143,11 +138,11 @@ export const ContractorDetailsPage: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <p className="text-sm text-gray-600">معرف المستخدم (رقم الهوية)</p>
-            <p className="text-[#111111]">{contractor.id}</p>
+            <p className="text-[#111111]">{contractor.pid?.trim() || '—'}</p>
           </div>
           <div>
-            <p className="text-sm text-gray-600">الاسم</p>
-            <p className="text-[#111111]">{contractor.name}</p>
+            <p className="text-sm text-gray-600">الاسم الكامل</p>
+            <p className="text-[#111111]">{contractor.name?.trim() || '—'}</p>
           </div>
           <div>
             <p className="text-sm text-gray-600">رقم الجوال</p>
@@ -244,9 +239,7 @@ export const ContractorDetailsPage: React.FC = () => {
             <Table
               columns={ratingsColumns}
               data={ratings.map((rating) => {
-                const client = clients.find((c) => c.id === rating.clientId);
-                const clientName =
-                  rating.clientName || client?.name || rating.clientId || '—';
+                const clientName = rating.clientName?.trim() || 'عرض العميل';
                 return {
                   id: rating.id,
                   rating: rating.rating,
@@ -378,7 +371,7 @@ export const ContractorDetailsPage: React.FC = () => {
       {/* Regular Requests (مناقصات) Section */}
       {activeRequestType === 'regular' && (
         <Card
-          title="المناقصات (آخر 10)"
+          title="المناقصات"
           action={
             <Link to={`/requests?contractor=${id}`}>
               <Button variant="secondary">عرض الكل</Button>
@@ -395,7 +388,7 @@ export const ContractorDetailsPage: React.FC = () => {
                   label: 'رقم الطلب',
                   render: (request: ServiceRequest) => (
                     <Link to={`/requests/regular/${request.id}`} className="text-blue-600 hover:underline">
-                      {request.id}
+                      {getRequestDisplayNumber(request.id, false)}
                     </Link>
                   ),
                 },
@@ -411,6 +404,13 @@ export const ContractorDetailsPage: React.FC = () => {
                   label: 'اسم الخدمة',
                   render: (request: ServiceRequest) => (
                     <span className="text-[#666666]">{request.serviceName}</span>
+                  ),
+                },
+                {
+                  key: 'duration',
+                  label: 'المدة',
+                  render: (request: ServiceRequest) => (
+                    <span className="text-[#666666]">{getRegularRequestDurationDisplay(request)}</span>
                   ),
                 },
                 {
@@ -442,7 +442,7 @@ export const ContractorDetailsPage: React.FC = () => {
       {/* Quick Service Orders Section */}
       {activeRequestType === 'quick' && (
         <Card
-          title="الخدمات السريعة (آخر 10)"
+          title="الخدمات السريعة"
           action={
             <Link to={`/requests?contractor=${id}&type=quick`}>
               <Button variant="secondary">عرض الكل</Button>
@@ -459,7 +459,7 @@ export const ContractorDetailsPage: React.FC = () => {
                   label: 'رقم الطلب',
                   render: (order: QuickServiceOrder) => (
                     <Link to={`/requests/quick/${order.id}`} className="text-blue-600 hover:underline">
-                      {order.id}
+                      {getRequestDisplayNumber(order.id, true)}
                     </Link>
                   ),
                 },
@@ -486,9 +486,9 @@ export const ContractorDetailsPage: React.FC = () => {
                 },
                 {
                   key: 'duration',
-                  label: 'المدة',
+                  label: 'مدة الطلب',
                   render: (order: QuickServiceOrder) => (
-                    <span className="text-[#666666]">{order.duration}</span>
+                    <span className="text-[#666666]">{formatQuotationDurationForDisplay(order.duration)}</span>
                   ),
                 },
                 {

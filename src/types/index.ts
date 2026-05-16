@@ -163,6 +163,8 @@ export interface ServiceRequest {
   materialsIncluded?: boolean;             // المواد مشمولة (يحددها العميل عند إنشاء الطلب)
   startDate?: string;                      // تاريخ البدء
   expectedDuration?: string;             // المدة المتوقعة (مثل: "2–4 أسابيع")
+  /** مدة التنفيذ من العرض المقبول (يضيفها الـ API في لوحة الإدارة) */
+  executionDuration?: string | number;
   allowSiteVisits: boolean;               // السماح بزيارات الموقع
   attachments: string[];                  // المرفقات (روابط الملفات) - قد يتضمن المخطط إذا كان hasDesign = true
   notes?: string;                         // ملاحظات إضافية
@@ -415,6 +417,11 @@ export interface Complaint {
   projectReference?: string;
   clientReference?: string;
   contractorReference?: string;
+  /** National / residency id (`pid` on app_users) */
+  clientPid?: string;
+  contractorPid?: string;
+  clientPhone?: string;
+  contractorPhone?: string;
   respondedByName?: string;
 }
 
@@ -568,6 +575,10 @@ export interface PaymentMethod {
 // 25. SupportTicket - تذكرة الدعم
 export interface SupportTicket {
   id: string;                              // معرف التذكرة
+  /** مرجع للعرض (مثل TKT-LEG-…)، من الخادم أو مشتّر من معرف Mongo */
+  ticketNumber?: string;
+  /** رقم الهوية الوطنية (PID) من `app_users` */
+  userPid?: string;
   userId: string;                         // معرف المستخدم
   role: UserRole;                         // الدور (CLIENT/CONTRACTOR)
   title: string;                          // العنوان
